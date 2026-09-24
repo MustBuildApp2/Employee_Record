@@ -18,7 +18,7 @@ function HolographicCredential({ position, rotation, accent, title, number }: {
         {/* Pass Card Base with metallic frosted look */}
         <RoundedBox args={[1.55, 0.95, 0.07]} radius={0.07} smoothness={4}>
           <meshPhysicalMaterial
-            color="#0b1b17"
+            color="#1e293b"
             roughness={0.2}
             metalness={0.65}
             clearcoat={0.9}
@@ -29,7 +29,7 @@ function HolographicCredential({ position, rotation, accent, title, number }: {
         {/* Outer glowing border rim */}
         <mesh position={[0, 0, 0.038]}>
           <planeGeometry args={[1.51, 0.91]} />
-          <meshBasicMaterial color="#163e33" transparent opacity={0.6} />
+          <meshBasicMaterial color="#0f766e" transparent opacity={0.6} />
         </mesh>
 
         {/* Top Header Strip */}
@@ -101,7 +101,7 @@ function OrbitCore() {
       <mesh>
         <icosahedronGeometry args={[1.2, 3]} />
         <meshPhysicalMaterial
-          color="#064e3b"
+          color="#047857"
           roughness={0.15}
           metalness={0.4}
           clearcoat={1}
@@ -179,7 +179,7 @@ export default function LoginScene() {
   return (
     <div className="login-scene" aria-hidden="true">
       <Canvas camera={{ position: [0, 0.2, 6.8], fov: 42 }} dpr={[1, 1.8]}>
-        <color attach="background" args={["#051512"]} />
+        <color attach="background" args={["#0a1526"]} />
         <ambientLight intensity={1.3} />
         <directionalLight position={[5, 6, 4]} intensity={3.5} color="#fff8e7" />
         <directionalLight position={[-5, -3, -2]} intensity={1.2} color="#059669" />
