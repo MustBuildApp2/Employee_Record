@@ -1903,7 +1903,7 @@ export default function Home() {
   const [tab, setTab] = useState<WorkerType>("MC");
 
   // Theme & Language
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState<"dark" | "light">("light");
   const [lang, setLang] = useState<Language>("en");
   const t = translations[lang] || translations.en;
 
@@ -1942,8 +1942,13 @@ export default function Home() {
       sessionStorage.getItem("workforce_session") === "active";
     setAuthenticated(isAuth);
 
-    const storedTheme = localStorage.getItem("workforce_theme") as "dark" | "light";
-    if (storedTheme) setTheme(storedTheme);
+    const storedTheme = localStorage.getItem("workforce_theme_v2") as "dark" | "light";
+    if (storedTheme) {
+      setTheme(storedTheme);
+    } else {
+      setTheme("light");
+      localStorage.setItem("workforce_theme_v2", "light");
+    }
 
     const storedLang = localStorage.getItem("workforce_lang") as Language;
     if (storedLang) setLang(storedLang);
@@ -1978,6 +1983,7 @@ export default function Home() {
   // Update theme attribute on root
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("workforce_theme_v2", theme);
     localStorage.setItem("workforce_theme", theme);
   }, [theme]);
 
