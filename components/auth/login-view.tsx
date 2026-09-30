@@ -4,29 +4,20 @@ import {
   AlertCircle,
   ArrowRight,
   Building2,
-  CheckCircle2,
   Eye,
   EyeOff,
-  Fingerprint,
   Globe,
+  KeyRound,
+  LockKeyhole,
   Mail,
   Moon,
   RefreshCw,
   ShieldCheck,
   Sun,
 } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Language, translations } from "@/app/i18n";
 import LoginScene from "./login-scene";
-
-function LockIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
-  );
-}
 
 export function LoginView({
   onSuccess,
@@ -42,44 +33,29 @@ export function LoginView({
   onLangChange: (l: Language) => void;
 }) {
   const t = translations[lang] || translations.en;
-  const [email, setEmail] = useState("alex.morgan@workforce.sg");
-  const [password, setPassword] = useState("password123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [activeRole, setActiveRole] = useState("alex");
+  const [passkeySupported, setPasskeySupported] = useState(false);
 
-  const demoAccounts = [
-    {
-      id: "alex",
-      title: "Alex Morgan",
-      role: "Operations Director",
-      email: "alex.morgan@workforce.sg",
-      pwd: "password123",
-    },
-    {
-      id: "sarah",
-      title: "Sarah Chen",
-      role: "Safety Manager",
-      email: "sarah.chen@workforce.sg",
-      pwd: "password123",
-    },
-    {
-      id: "marcus",
-      title: "Marcus Tan",
-      role: "Compliance Officer",
-      email: "marcus.tan@workforce.sg",
-      pwd: "password123",
-    },
-  ];
-
-  function selectDemoAccount(acc: (typeof demoAccounts)[0]) {
-    setActiveRole(acc.id);
-    setEmail(acc.email);
-    setPassword(acc.pwd);
-    setError("");
-  }
+  useEffect(() => {
+    let mounted = true;
+    async function checkPasskeySupport() {
+      if (!("PublicKeyCredential" in window) || !navigator.credentials) return;
+      const credentialApi = window.PublicKeyCredential as typeof PublicKeyCredential & {
+        isUserVerifyingPlatformAuthenticatorAvailable?: () => Promise<boolean>;
+      };
+      const supported = credentialApi.isUserVerifyingPlatformAuthenticatorAvailable
+        ? await credentialApi.isUserVerifyingPlatformAuthenticatorAvailable()
+        : true;
+      if (mounted) setPasskeySupported(supported);
+    }
+    checkPasskeySupport().catch(() => undefined);
+    return () => { mounted = false; };
+  }, []);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -150,24 +126,6 @@ export function LoginView({
               <p>{t.portalSubtitle}</p>
             </div>
 
-            {/* Demo Account Switcher */}
-            <div className="demo-role-section">
-              <span>{t.quickDemo}</span>
-              <div className="demo-role-grid">
-                {demoAccounts.map((acc) => (
-                  <button
-                    type="button"
-                    key={acc.id}
-                    className={`demo-role-btn ${activeRole === acc.id ? "active" : ""}`}
-                    onClick={() => selectDemoAccount(acc)}
-                  >
-                    {acc.title}
-                    <small>{acc.role}</small>
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* Form */}
             <form onSubmit={submit} className="login-form" noValidate>
               <div className="auth-field">
@@ -188,7 +146,7 @@ export function LoginView({
               <div className="auth-field">
                 <label htmlFor="password">{t.password}</label>
                 <div className="auth-input-wrap">
-                  <ShieldCheck size={17} />
+                  <LockKeyhole size={17} />
                   <input
                     id="password"
                     type={show ? "text" : "password"}
@@ -200,6 +158,7 @@ export function LoginView({
                     type="button"
                     className="auth-pwd-toggle"
                     onClick={() => setShow(!show)}
+                    aria-label={show ? "Hide password" : "Show password"}
                     title={show ? "Hide password" : "Show password"}
                   >
                     {show ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -247,32 +206,28 @@ export function LoginView({
                 )}
               </button>
 
-              <div className="auth-divider">{t.orAuthWith}</div>
-
-              <button
-                type="button"
-                className="auth-passkey-btn"
-                onClick={simulatePasskey}
-                disabled={loading}
-              >
-                <Fingerprint size={18} style={{ color: "#34d399" }} />
-                <span>{t.biometricLogin}</span>
-              </button>
+              {passkeySupported && (
+                <>
+                  <div className="auth-divider">{t.orAuthWith}</div>
+                  <button
+                    type="button"
+                    className="auth-passkey-btn"
+                    onClick={simulatePasskey}
+                    disabled={loading}
+                  >
+                    <KeyRound size={18} aria-hidden="true" />
+                    <span>{t.biometricLogin}</span>
+                  </button>
+                </>
+              )}
             </form>
           </div>
         </div>
 
         <div className="login-shell">
           <footer className="login-compliance-footer">
-            <div className="compliance-badges-row">
-              <span><ShieldCheck size={13} /> ISO 27001 Certified</span>
-              <span>•</span>
-              <span><CheckCircle2 size={13} /> End-to-End Encryption</span>
-              <span>•</span>
-              <span><LockIcon /> SOC2 Verified</span>
-            </div>
             <div className="login-footer-copy">
-              Workforce Command Enterprise © 2026. All rights reserved.
+              © 2026 T2C AI NEXUS. All rights reserved.
             </div>
           </footer>
         </div>

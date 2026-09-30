@@ -1,13 +1,13 @@
 "use client";
 
 import {
-  Activity, AlertCircle, ArrowRight, Bell, Bookmark, BriefcaseBusiness, Building2,
-  CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
+  AlertCircle, ArrowRight, Bell, Bookmark, BriefcaseBusiness, Building2,
+  CalendarClock, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   Clock, Columns3, Download, Edit3, Eye, EyeOff, FileBadge, FileSpreadsheet,
-  Filter, Fingerprint, Gauge, Globe, IdCard, LayoutDashboard, LayoutGrid, LogOut,
+  FileCheck2, Filter, Globe, IdCard, KeyRound, LayoutDashboard, LayoutGrid, LockKeyhole, LogOut,
   Mail, Menu, Moon, MoreHorizontal, Phone, BookOpenCheck, Plus, Printer, QrCode,
   RefreshCw, Search, Send, ShieldAlert, ShieldCheck, Sparkles, Sun, Table2, Trash2,
-  TrendingUp, Upload, User, UserCheck, UsersRound, X,
+  Upload, User, UserCheck, UsersRound, X,
 } from "lucide-react";
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import LoginScene from "./login-scene";
@@ -51,6 +51,7 @@ type FilterState = {
   wp: ExpiryFilter;
   passport: ExpiryFilter;
   csoc: ExpiryFilter;
+  attentionOnly: boolean;
 };
 
 type ColumnKey =
@@ -79,6 +80,7 @@ const emptyFilters: FilterState = {
   wp: "all",
   passport: "all",
   csoc: "all",
+  attentionOnly: false,
 };
 
 const columnLabels: Record<ColumnKey, string> = {
@@ -119,6 +121,21 @@ function isoDate(offset: number) {
   date.setHours(12, 0, 0, 0);
   date.setDate(date.getDate() + offset);
   return date.toISOString().slice(0, 10);
+}
+
+function templateDate(value: string) {
+  const [year, month, day] = value.split("-");
+  return `${day}-${month}-${year}`;
+}
+
+function normalizeImportDate(value: string) {
+  const date = value.trim();
+  const ddmmyyyy = date.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/);
+  if (ddmmyyyy) {
+    const [, day, month, year] = ddmmyyyy;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+  return date;
 }
 
 const seedEmployees: Employee[] = [
@@ -392,44 +409,29 @@ function Login({
   onLangChange: (l: Language) => void;
 }) {
   const t = translations[lang] || translations.en;
-  const [email, setEmail] = useState("alex.morgan@workforce.sg");
-  const [password, setPassword] = useState("password123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [activeRole, setActiveRole] = useState("alex");
+  const [passkeySupported, setPasskeySupported] = useState(false);
 
-  const demoAccounts = [
-    {
-      id: "alex",
-      title: "Alex Morgan",
-      role: "Operations Director",
-      email: "alex.morgan@workforce.sg",
-      pwd: "password123",
-    },
-    {
-      id: "sarah",
-      title: "Sarah Chen",
-      role: "Safety Manager",
-      email: "sarah.chen@workforce.sg",
-      pwd: "password123",
-    },
-    {
-      id: "marcus",
-      title: "Marcus Tan",
-      role: "Compliance Officer",
-      email: "marcus.tan@workforce.sg",
-      pwd: "password123",
-    },
-  ];
-
-  function selectDemoAccount(acc: typeof demoAccounts[0]) {
-    setActiveRole(acc.id);
-    setEmail(acc.email);
-    setPassword(acc.pwd);
-    setError("");
-  }
+  useEffect(() => {
+    let mounted = true;
+    async function checkPasskeySupport() {
+      if (!("PublicKeyCredential" in window) || !navigator.credentials) return;
+      const credentialApi = window.PublicKeyCredential as typeof PublicKeyCredential & {
+        isUserVerifyingPlatformAuthenticatorAvailable?: () => Promise<boolean>;
+      };
+      const supported = credentialApi.isUserVerifyingPlatformAuthenticatorAvailable
+        ? await credentialApi.isUserVerifyingPlatformAuthenticatorAvailable()
+        : true;
+      if (mounted) setPasskeySupported(supported);
+    }
+    checkPasskeySupport().catch(() => undefined);
+    return () => { mounted = false; };
+  }, []);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -500,24 +502,6 @@ function Login({
               <p>{t.portalSubtitle}</p>
             </div>
 
-            {/* Demo Account Switcher */}
-            <div className="demo-role-section">
-              <span>{t.quickDemo}</span>
-              <div className="demo-role-grid">
-                {demoAccounts.map((acc) => (
-                  <button
-                    type="button"
-                    key={acc.id}
-                    className={`demo-role-btn ${activeRole === acc.id ? "active" : ""}`}
-                    onClick={() => selectDemoAccount(acc)}
-                  >
-                    {acc.title}
-                    <small>{acc.role}</small>
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* Form */}
             <form onSubmit={submit} className="login-form" noValidate>
               <div className="auth-field">
@@ -538,7 +522,7 @@ function Login({
               <div className="auth-field">
                 <label htmlFor="password">{t.password}</label>
                 <div className="auth-input-wrap">
-                  <ShieldCheck size={17} />
+                  <LockKeyhole size={17} />
                   <input
                     id="password"
                     type={show ? "text" : "password"}
@@ -550,6 +534,7 @@ function Login({
                     type="button"
                     className="auth-pwd-toggle"
                     onClick={() => setShow(!show)}
+                    aria-label={show ? "Hide password" : "Show password"}
                     title={show ? "Hide password" : "Show password"}
                   >
                     {show ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -597,32 +582,28 @@ function Login({
                 )}
               </button>
 
-              <div className="auth-divider">{t.orAuthWith}</div>
-
-              <button
-                type="button"
-                className="auth-passkey-btn"
-                onClick={simulatePasskey}
-                disabled={loading}
-              >
-                <Fingerprint size={18} style={{ color: "#34d399" }} />
-                <span>{t.biometricLogin}</span>
-              </button>
+              {passkeySupported && (
+                <>
+                  <div className="auth-divider">{t.orAuthWith}</div>
+                  <button
+                    type="button"
+                    className="auth-passkey-btn"
+                    onClick={simulatePasskey}
+                    disabled={loading}
+                  >
+                    <KeyRound size={18} aria-hidden="true" />
+                    <span>{t.biometricLogin}</span>
+                  </button>
+                </>
+              )}
             </form>
           </div>
         </div>
 
         <div className="login-shell">
           <footer className="login-compliance-footer">
-            <div className="compliance-badges-row">
-              <span><ShieldCheck size={13} /> ISO 27001 Certified</span>
-              <span>•</span>
-              <span><CheckCircle2 size={13} /> End-to-End Encryption</span>
-              <span>•</span>
-              <span><LockIcon /> SOC2 Verified</span>
-            </div>
             <div className="login-footer-copy">
-              Workforce Command Enterprise © 2026. All rights reserved.
+              © 2026 T2C AI NEXUS. All rights reserved.
             </div>
           </footer>
         </div>
@@ -630,15 +611,6 @@ function Login({
 
       <LoginScene />
     </main>
-  );
-}
-
-function LockIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
   );
 }
 
@@ -653,9 +625,9 @@ function downloadSampleCsvFile() {
     "Nationality",
     "Country",
     "Job Designation",
-    "WP Expiry (YYYY-MM-DD)",
-    "Passport Expiry (YYYY-MM-DD)",
-    "CSOC Expiry (YYYY-MM-DD)",
+    "WP Expiry (DD-MM-YYYY)",
+    "Passport Expiry (DD-MM-YYYY)",
+    "CSOC Expiry (DD-MM-YYYY)",
     "FIN Number",
     "Work Permit No",
     "Phone",
@@ -670,9 +642,9 @@ function downloadSampleCsvFile() {
     "Indian",
     "India",
     "Site Supervisor",
-    isoDate(120),
-    isoDate(500),
-    isoDate(60),
+    templateDate(isoDate(120)),
+    templateDate(isoDate(500)),
+    templateDate(isoDate(60)),
     "G1842991R",
     "WP-882194",
     "+65 8123 4567",
@@ -687,9 +659,9 @@ function downloadSampleCsvFile() {
     "Singaporean",
     "Singapore",
     "Project Coordinator",
-    isoDate(999),
-    isoDate(850),
-    isoDate(300),
+    templateDate(isoDate(999)),
+    templateDate(isoDate(850)),
+    templateDate(isoDate(300)),
     "S8911002D",
     "N/A",
     "+65 9123 8899",
@@ -704,9 +676,9 @@ function downloadSampleCsvFile() {
     "Bangladeshi",
     "Bangladesh",
     "Scaffolder Specialist",
-    isoDate(45),
-    isoDate(260),
-    isoDate(15),
+    templateDate(isoDate(45)),
+    templateDate(isoDate(260)),
+    templateDate(isoDate(15)),
     "G9910283K",
     "WP-331029",
     "+65 8899 4433",
@@ -772,9 +744,9 @@ function ImportModal({
           country: val[4] || val[3] || "Foreign Worker",
           citizen: val[2] === "Citizen" ? "Citizen" : "Non-Citizen",
           designation: val[5] || "General Worker",
-          wpExpiry: val[6] || isoDate(90),
-          passportExpiry: val[7] || isoDate(365),
-          csocExpiry: val[8] || isoDate(180),
+          wpExpiry: normalizeImportDate(val[6] || isoDate(90)),
+          passportExpiry: normalizeImportDate(val[7] || isoDate(365)),
+          csocExpiry: normalizeImportDate(val[8] || isoDate(180)),
           finNumber: val[9] || "",
           workPermitNo: val[10] || "",
           phone: val[11] || "",
@@ -1231,9 +1203,17 @@ function EmployeeModal({
 
   const [form, setForm] = useState<Employee>(initial || blank);
   const [error, setError] = useState("");
+  const documentInputRef = useRef<HTMLInputElement>(null);
 
   const update = (key: keyof Employee, value: string | string[]) =>
     setForm({ ...form, [key]: value });
+
+  function handleDocumentSelection(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files || []);
+    if (files.length > 0) {
+      update("documents", files.map((file) => file.name));
+    }
+  }
 
   function fillDemo() {
     const r = Math.floor(1000 + Math.random() * 9000);
@@ -1511,16 +1491,27 @@ function EmployeeModal({
                 background: "var(--surface-alt)",
                 cursor: "pointer",
               }}
+              role="button"
+              tabIndex={0}
+              aria-label="Attach worker documents"
+              onClick={() => documentInputRef.current?.click()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  documentInputRef.current?.click();
+                }
+              }}
             >
               <Upload size={24} style={{ color: "#059669", margin: "0 auto 6px" }} />
               <div style={{ fontSize: "13px", fontWeight: 600 }}>Click to attach copies</div>
               <div style={{ fontSize: "11px", color: "#64748b" }}>Passport, CSOC Certificate, WP Card (PDF, PNG, JPG)</div>
               <input
+                ref={documentInputRef}
                 type="file"
                 multiple
                 accept=".pdf,.jpg,.jpeg,.png"
                 style={{ display: "none" }}
-                onChange={(e) => update("documents", Array.from(e.target.files || []).map((f) => f.name))}
+                onChange={handleDocumentSelection}
               />
             </div>
             {form.documents.length > 0 && (
@@ -1593,51 +1584,44 @@ function OverviewScreen({
   const validTotal = summary.wp.valid + summary.passport.valid + summary.csoc.valid;
   const readiness = Math.round((validTotal / complianceTotal) * 100);
 
-  const priorityWorkers = [...employees]
-    .filter((e) =>
-      [e.wpExpiry, e.passportExpiry, e.csocExpiry].some((d) => expiryState(d) !== "valid")
-    )
-    .sort(
-      (a, b) =>
-        Math.min(daysUntil(a.wpExpiry), daysUntil(a.passportExpiry), daysUntil(a.csocExpiry)) -
-        Math.min(daysUntil(b.wpExpiry), daysUntil(b.passportExpiry), daysUntil(b.csocExpiry))
-    )
-    .slice(0, 4);
+  const renewalActions = employees
+    .flatMap((employee) => [
+      { employee, documentType: "Work Pass", expiry: employee.wpExpiry },
+      { employee, documentType: "Passport", expiry: employee.passportExpiry },
+      { employee, documentType: "Safety Certificate (CSOC / BCSS)", expiry: employee.csocExpiry },
+    ])
+    .filter((action) => daysUntil(action.expiry) <= 30)
+    .sort((a, b) => daysUntil(a.expiry) - daysUntil(b.expiry));
+  const visibleRenewalActions = renewalActions.slice(0, 4);
+  const expiryDates = employees.flatMap((employee) => [
+    employee.wpExpiry,
+    employee.passportExpiry,
+    employee.csocExpiry,
+  ]);
 
   const buckets = [
-    { label: "7 Days", limit: 7, count: 0, cls: "urgent" },
-    { label: "30 Days", limit: 30, count: 0, cls: "warning" },
-    { label: "60 Days", limit: 60, count: 0, cls: "notice" },
-    { label: "90 Days", limit: 90, count: 0, cls: "normal" },
+    { label: "0-7 days", limit: 7, count: 0, cls: "urgent" },
+    { label: "8-30 days", limit: 30, count: 0, cls: "warning" },
+    { label: "31-60 days", limit: 60, count: 0, cls: "notice" },
+    { label: "61-90 days", limit: 90, count: 0, cls: "normal" },
   ];
 
-  buckets[0].count = employees.filter((e) =>
-    [e.wpExpiry, e.passportExpiry, e.csocExpiry].some((d) => {
-      const du = daysUntil(d);
-      return du >= 0 && du <= 7;
-    })
-  ).length;
-
-  buckets[1].count = employees.filter((e) =>
-    [e.wpExpiry, e.passportExpiry, e.csocExpiry].some((d) => {
-      const du = daysUntil(d);
-      return du > 7 && du <= 30;
-    })
-  ).length;
-
-  buckets[2].count = employees.filter((e) =>
-    [e.wpExpiry, e.passportExpiry, e.csocExpiry].some((d) => {
-      const du = daysUntil(d);
-      return du > 30 && du <= 60;
-    })
-  ).length;
-
-  buckets[3].count = employees.filter((e) =>
-    [e.wpExpiry, e.passportExpiry, e.csocExpiry].some((d) => {
-      const du = daysUntil(d);
-      return du > 60 && du <= 90;
-    })
-  ).length;
+  buckets[0].count = expiryDates.filter((date) => {
+    const days = daysUntil(date);
+    return days >= 0 && days <= 7;
+  }).length;
+  buckets[1].count = expiryDates.filter((date) => {
+    const days = daysUntil(date);
+    return days > 7 && days <= 30;
+  }).length;
+  buckets[2].count = expiryDates.filter((date) => {
+    const days = daysUntil(date);
+    return days > 30 && days <= 60;
+  }).length;
+  buckets[3].count = expiryDates.filter((date) => {
+    const days = daysUntil(date);
+    return days > 60 && days <= 90;
+  }).length;
 
   return (
     <div className="overview-container">
@@ -1645,14 +1629,14 @@ function OverviewScreen({
       <section className="overview-hero-card">
         <div>
           <span className="hero-welcome-badge">
-            <Sparkles size={12} /> Live Command Center
+            <Sparkles size={12} /> Workforce Overview
           </span>
           <h1>{t.welcomeUser}</h1>
           <p>
-            {t.commandSubtitle} Compliance Index: <strong>{readiness}%</strong>.
+            {t.commandSubtitle} Document Validity: <strong>{readiness}%</strong>.
             {attention > 0 && (
               <span style={{ color: "#fca5a5", marginLeft: "6px" }}>
-                ({attention} credentials due for renewal review)
+                ({attention} employees have documents requiring attention)
               </span>
             )}
           </p>
@@ -1680,10 +1664,9 @@ function OverviewScreen({
           </div>
           <div className="kpi-value-row">
             <strong>{employees.length}</strong>
-            <span className="kpi-trend-tag positive">+12% YoY</span>
           </div>
           <p className="kpi-subtext">
-            {employees.filter((e) => e.type === "MC").length} Main-Con • {employees.filter((e) => e.type === "SC").length} Subcontractors
+            {employees.filter((e) => e.type === "MC").length} Main Contractor employees • {employees.filter((e) => e.type === "SC").length} Subcontractor employees
           </p>
         </article>
 
@@ -1697,24 +1680,24 @@ function OverviewScreen({
           <div className="kpi-value-row">
             <strong>{activeCount}</strong>
             <span className="kpi-trend-tag positive">
-              {Math.round((activeCount / Math.max(1, employees.length)) * 100)}%
+              {activeCount}/{employees.length}
             </span>
           </div>
-          <p className="kpi-subtext">Verified deployable personnel</p>
+          <p className="kpi-subtext">Employee records marked Active</p>
         </article>
 
         <article className="kpi-card gold">
           <div className="kpi-card-top">
             <span>{t.complianceScore}</span>
             <div className="kpi-icon-pill gold">
-              <Gauge size={18} />
+              <FileCheck2 size={18} />
             </div>
           </div>
           <div className="kpi-value-row">
             <strong>{readiness}%</strong>
             <span className="kpi-trend-tag neutral">{validTotal}/{complianceTotal}</span>
           </div>
-          <p className="kpi-subtext">Statutory certificates audited & valid</p>
+          <p className="kpi-subtext">{validTotal} of {complianceTotal} applicable documents valid</p>
         </article>
 
         <article
@@ -1731,9 +1714,9 @@ function OverviewScreen({
           </div>
           <div className="kpi-value-row">
             <strong>{attention}</strong>
-            <span className="kpi-trend-tag warning">Urgent</span>
+            <span className="kpi-trend-tag warning">Employee count</span>
           </div>
-          <p className="kpi-subtext">Expired or due in ≤ 30 days →</p>
+          <p className="kpi-subtext">Expired or expiring within 30 days</p>
         </article>
       </section>
 
@@ -1748,17 +1731,17 @@ function OverviewScreen({
                 </div>
                 <div>
                   <h2>{t.credentialCoverage}</h2>
-                  <p>Real-time validity across statutory requirements</p>
+                  <p>Validity of tracked employee documents</p>
                 </div>
               </div>
-              <span className="status-pill active">{readiness}% Ready</span>
+              <span className="status-pill active">{readiness}% Valid</span>
             </div>
 
             <div className="compliance-progress-list">
               {[
-                { label: "Work Permits & S Passes", stats: summary.wp },
-                { label: "Worker Passports", stats: summary.passport },
-                { label: "CSOC / BCSS Safety Certs", stats: summary.csoc },
+                { label: "Work Passes", stats: summary.wp },
+                { label: "Passports", stats: summary.passport },
+                { label: "Safety Certificates (CSOC / BCSS)", stats: summary.csoc },
               ].map((item) => {
                 const tot = Math.max(1, item.stats.valid + item.stats.expiring + item.stats.expired);
                 const pct = Math.round((item.stats.valid / tot) * 100);
@@ -1766,14 +1749,14 @@ function OverviewScreen({
                   <div key={item.label} className="comp-progress-item">
                     <div className="comp-meta-row">
                       <strong>{item.label}</strong>
-                      <span>{pct}% Current</span>
+                      <span>{pct}% Valid</span>
                     </div>
                     <div className="comp-track">
                       <div className="comp-fill" style={{ width: `${pct}%` }} />
                     </div>
                     <div className="comp-details-row">
-                      <span>{item.stats.valid} Valid</span>
-                      <span style={{ color: "#d97706" }}>{item.stats.expiring} Expiring soon</span>
+                      <span>{item.stats.valid} Valid beyond 30 days</span>
+                      <span style={{ color: "#d97706" }}>{item.stats.expiring} Expiring within 30 days</span>
                       <span style={{ color: "#dc2626" }}>{item.stats.expired} Expired</span>
                     </div>
                   </div>
@@ -1786,11 +1769,11 @@ function OverviewScreen({
             <div className="dash-panel-header">
               <div className="dash-panel-title">
                 <div className="panel-icon" style={{ color: "#d97706" }}>
-                  <TrendingUp size={18} />
+                  <CalendarClock size={18} />
                 </div>
                 <div>
                   <h2>{t.expiryHorizon}</h2>
-                  <p>Upcoming statutory milestones (7 to 90 days)</p>
+                  <p>Documents expiring within the next 90 days</p>
                 </div>
               </div>
               <button className="link-button" onClick={onOpenRecords} style={{ fontSize: "12px" }}>
@@ -1804,7 +1787,7 @@ function OverviewScreen({
                   <span className="expiry-count-bubble">{b.count}</span>
                   <div
                     className="expiry-bar-pillar"
-                    style={{ height: `${Math.max(16, b.count * 28)}px` }}
+                    style={{ height: `${b.count ? Math.max(16, b.count * 28) : 0}px` }}
                   />
                   <span className="lbl">{b.label}</span>
                 </div>
@@ -1818,32 +1801,28 @@ function OverviewScreen({
             <div className="dash-panel-header">
               <div className="dash-panel-title">
                 <div className="panel-icon" style={{ color: "#dc2626" }}>
-                  <Activity size={18} />
+                  <CalendarClock size={18} />
                 </div>
                 <div>
                   <h2>{t.priorityQueue}</h2>
-                  <p>Immediate compliance renewals required</p>
+                  <p>Review expired documents and upcoming renewals.</p>
                 </div>
               </div>
-              <span className="status-pill pending">{priorityWorkers.length} Pending</span>
+              <span className="status-pill pending">{renewalActions.length} Actions</span>
             </div>
 
             <div className="priority-queue-list">
-              {priorityWorkers.length === 0 ? (
+              {renewalActions.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "30px 10px", color: "#94a3b8" }}>
                   <CheckCircle2 size={32} style={{ color: "#10b981", margin: "0 auto 8px" }} />
                   <p style={{ margin: 0, fontWeight: 600 }}>All workforce records up to date!</p>
                 </div>
               ) : (
-                priorityWorkers.map((w) => {
-                  const minDays = Math.min(
-                    daysUntil(w.wpExpiry),
-                    daysUntil(w.passportExpiry),
-                    daysUntil(w.csocExpiry)
-                  );
-                  const isOver = minDays < 0;
+                visibleRenewalActions.map(({ employee: w, documentType, expiry }) => {
+                  const days = daysUntil(expiry);
+                  const isOver = days < 0;
                   return (
-                    <div key={w.id} className="priority-item-card">
+                    <div key={`${w.id}-${documentType}`} className="priority-item-card">
                       <div className="priority-avatar">
                         {w.name
                           .split(" ")
@@ -1854,16 +1833,25 @@ function OverviewScreen({
                       <div className="priority-details">
                         <strong>{w.name}</strong>
                         <small>{w.code} • {w.designation}</small>
+                        <small>{documentType} • {formatDate(expiry)}</small>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
                         <span className={`priority-badge-alert ${isOver ? "overdue" : "due-soon"}`}>
-                          {isOver ? `${Math.abs(minDays)}d overdue` : `${minDays}d left`}
+                          {isOver ? `Expired ${Math.abs(days)} days ago` : `Expires in ${days} days`}
                         </span>
                         <button
                           type="button"
                           className="link-button"
                           style={{ fontSize: "11px" }}
-                          onClick={() => onSendAlert(`Renewal notice sent for ${w.name}.`)}
+                          onClick={onOpenRecords}
+                        >
+                          View Record
+                        </button>
+                        <button
+                          type="button"
+                          className="link-button"
+                          style={{ fontSize: "11px" }}
+                          onClick={() => onSendAlert(`Renewal reminder sent for ${w.name}: ${documentType}.`)}
                         >
                           {t.sendAlert}
                         </button>
@@ -1875,10 +1863,15 @@ function OverviewScreen({
             </div>
 
             <div style={{ marginTop: "auto", paddingTop: "18px" }}>
+              {renewalActions.length > visibleRenewalActions.length && (
+                <p style={{ margin: "0 0 8px", textAlign: "center", color: "var(--text-muted)", fontSize: "12px" }}>
+                  Showing {visibleRenewalActions.length} of {renewalActions.length}
+                </p>
+              )}
               <button
                 className="secondary-button"
                 style={{ width: "100%", justifyContent: "space-between" }}
-                onClick={onOpenRecords}
+                onClick={onFilterExpiring}
               >
                 <span>{t.openRegistry}</span>
                 <ArrowRight size={15} />
@@ -1934,6 +1927,7 @@ export default function Home() {
 
   // Clock
   const [currentTime, setCurrentTime] = useState("");
+  const [lastUpdated, setLastUpdated] = useState("");
 
   // Initialize from storage
   useEffect(() => {
@@ -1978,6 +1972,15 @@ export default function Home() {
     if (storedMode) setViewMode(storedMode);
 
     setReady(true);
+    setLastUpdated(
+      new Date().toLocaleString("en-SG", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    );
   }, []);
 
   // Update theme attribute on root
@@ -2054,6 +2057,7 @@ export default function Home() {
 
       return (
         searchMatch &&
+        (!filters.attentionOnly || [employee.wpExpiry, employee.passportExpiry, employee.csocExpiry].some((d) => expiryState(d) !== "valid")) &&
         (!filters.citizen || employee.citizen === filters.citizen) &&
         (!filters.passType || employee.passType === filters.passType) &&
         (!filters.status || employee.status === filters.status) &&
@@ -2111,7 +2115,7 @@ export default function Home() {
   function login(remember: boolean) {
     (remember ? localStorage : sessionStorage).setItem("workforce_session", "active");
     setAuthenticated(true);
-    setNotice("Authenticated successfully. Welcome to Workforce Command.");
+    setNotice("Authenticated successfully. Welcome to T2C AI NEXUS.");
   }
 
   function logout() {
@@ -2141,7 +2145,7 @@ export default function Home() {
       setFilters(next);
       setDraft(next);
     } else if (kind === "expiring") {
-      const next: FilterState = { ...emptyFilters, wp: "expiring" };
+      const next: FilterState = { ...emptyFilters, attentionOnly: true };
       setFilters(next);
       setDraft(next);
     } else if (kind === "wp") {
@@ -2270,7 +2274,7 @@ export default function Home() {
         }}
       >
         <RefreshCw className="spin" size={24} />
-        <span>Loading Workforce Command Suite...</span>
+        <span>Loading T2C AI NEXUS...</span>
       </main>
     );
   }
@@ -2309,8 +2313,8 @@ export default function Home() {
         </div>
 
         <div className="sidebar-status-banner">
-          <span className="pulse-dot" />
-          <span>Compliance Live Sync</span>
+          <Clock size={13} />
+          <span>Last updated: {lastUpdated || "Loading"}</span>
         </div>
 
         <nav className="sidebar-nav">
@@ -2358,7 +2362,7 @@ export default function Home() {
             onClick={() => {
               setView("overview");
               setSidebarOpen(false);
-              setNotice("Statutory Compliance matrix loaded.");
+              setNotice("Compliance overview loaded.");
             }}
           >
             <ShieldCheck size={17} />
@@ -2593,7 +2597,7 @@ export default function Home() {
                 <div>
                   <h1>{t.employeeRecords}</h1>
                   <p>
-                    Manage personnel profiles, statutory work passes, certifications, and audit readiness.
+                    Manage employee details, work passes, certifications, and document expiry dates.
                   </p>
                 </div>
                 <div className="page-actions-group">
