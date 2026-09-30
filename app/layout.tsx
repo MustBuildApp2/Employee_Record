@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Workforce | Employee Records",
-  description: "Employee records and compliance management",
+  title: "T2C AI NEXUS | Workforce Management",
+  description: "Workforce management for employee records, work passes, and safety certificates.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
