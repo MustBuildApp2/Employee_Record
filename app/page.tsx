@@ -7,7 +7,7 @@ import {
   FileCheck2, Filter, Globe, IdCard, KeyRound, LayoutDashboard, LayoutGrid, LockKeyhole, LogOut,
   Mail, Menu, Moon, MoreHorizontal, Phone, BookOpenCheck, Plus, Printer, QrCode,
   RefreshCw, Search, Send, ShieldAlert, ShieldCheck, Sparkles, Sun, Table2, Trash2,
-  Upload, User, UserCheck, UsersRound, X,
+  Upload, User, UserCheck, UserCog, UsersRound, X,
 } from "lucide-react";
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import LoginScene from "./login-scene";
@@ -16,8 +16,55 @@ import { Language, translations } from "./i18n";
 type WorkerType = "MC" | "SC";
 type WorkerStatus = "Active" | "Pending" | "Inactive";
 type ExpiryFilter = "all" | "valid" | "expiring" | "expired";
-type AppView = "overview" | "employees" | "compliance" | "calendar" | "reports";
+type AppView = "overview" | "employees" | "compliance" | "calendar" | "reports" | "users";
 type ViewMode = "table" | "grid";
+type UserRole = "Super Admin" | "Administrator" | "Manager" | "Viewer";
+type UserStatus = "Active" | "Suspended";
+
+type PortalUser = {
+  id: number;
+  name: string;
+  email: string;
+  role: UserRole;
+  status: UserStatus;
+  department: string;
+  expiresOn: string;
+  password: string;
+  forcePasswordChange: boolean;
+  canExport: boolean;
+  createdAt: string;
+};
+
+const seedPortalUsers: PortalUser[] = [
+  {
+    id: 1,
+    name: "Priya Nair",
+    email: "admin@t2c.ai",
+    role: "Super Admin",
+    status: "Active",
+    department: "Platform Administration",
+    expiresOn: "",
+    password: "Admin@123",
+    forcePasswordChange: false,
+    canExport: true,
+    createdAt: "2026-01-12",
+  },
+  {
+    id: 2,
+    name: "Alex Morgan",
+    email: "alex.morgan@workforce.sg",
+    role: "Manager",
+    status: "Active",
+    department: "Operations",
+    expiresOn: "",
+    password: "Welcome@123",
+    forcePasswordChange: false,
+    canExport: true,
+    createdAt: "2026-01-12",
+  },
+];
+
+const defaultPortalUser: PortalUser = seedPortalUsers[1];
 
 type Employee = {
   id: number;
@@ -402,7 +449,7 @@ function Login({
   lang,
   onLangChange,
 }: {
-  onSuccess: (remember: boolean) => void;
+  onSuccess: (email: string, password: string, remember: boolean) => void;
   theme: "dark" | "light";
   onToggleTheme: () => void;
   lang: Language;
@@ -439,12 +486,12 @@ function Login({
     if (password.length < 6) return setError("Password must contain at least 6 characters.");
     setError("");
     setLoading(true);
-    window.setTimeout(() => onSuccess(remember), 350);
+    window.setTimeout(() => onSuccess(email.trim().toLowerCase(), password, remember), 350);
   }
 
   function simulatePasskey() {
     setLoading(true);
-    window.setTimeout(() => onSuccess(true), 500);
+    window.setTimeout(() => onSuccess(email.trim().toLowerCase(), password, true), 500);
   }
 
   return (
@@ -1884,13 +1931,148 @@ function OverviewScreen({
   );
 }
 
-/* ==========================================================================
+/* ========================================================================== 
    MAIN APPLICATION ROOT COMPONENT
    ========================================================================== */
+function UserManagementScreen({
+  users,
+  onSave,
+  onToggleStatus,
+}: {
+  users: PortalUser[];
+  onSave: (user: PortalUser) => void;
+  onToggleStatus: (id: number) => void;
+}) {
+  const emptyUser: PortalUser = {
+    id: 0,
+    name: "",
+    email: "",
+    role: "Viewer",
+    status: "Active",
+    department: "",
+    expiresOn: "",
+    password: "",
+    forcePasswordChange: true,
+    canExport: false,
+    createdAt: new Date().toISOString().slice(0, 10),
+  };
+  const [draft, setDraft] = useState<PortalUser>(emptyUser);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [error, setError] = useState("");
+
+  function update<K extends keyof PortalUser>(key: K, value: PortalUser[K]) {
+    setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function startNew() {
+    setEditingId(null);
+    setDraft({ ...emptyUser, createdAt: new Date().toISOString().slice(0, 10) });
+    setError("");
+  }
+
+  function editUser(user: PortalUser) {
+    setEditingId(user.id);
+    setDraft({ ...user, password: "" });
+    setError("");
+  }
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    const email = draft.email.trim().toLowerCase();
+    if (draft.name.trim().length < 2) return setError("Enter the user's full name.");
+    if (!/^\S+@\S+\.\S+$/.test(email)) return setError("Enter a valid work email address.");
+    if (!editingId && draft.password.length < 8) return setError("New accounts need a password with at least 8 characters.");
+    if (users.some((user) => user.email.toLowerCase() === email && user.id !== editingId)) {
+      return setError("That email address already belongs to an account.");
+    }
+    if (draft.expiresOn && draft.expiresOn < new Date().toISOString().slice(0, 10)) {
+      return setError("Account expiry must be today or a future date.");
+    }
+    onSave({
+      ...draft,
+      id: editingId || 0,
+      name: draft.name.trim(),
+      email,
+      department: draft.department.trim() || "Operations",
+      password: draft.password || users.find((user) => user.id === editingId)?.password || "",
+    });
+    startNew();
+  }
+
+  return (
+    <div className="user-management-screen">
+      <div className="page-title-row user-management-heading">
+        <div>
+          <span className="section-kicker"><UserCog size={14} /> Access Control</span>
+          <h1>User Management</h1>
+          <p>Create portal accounts and apply access conditions before they can sign in.</p>
+        </div>
+        <button type="button" className="primary-button" onClick={startNew}>
+          <Plus size={16} /> New account
+        </button>
+      </div>
+
+      <div className="user-management-grid">
+        <form className="user-editor-panel" onSubmit={submit} noValidate>
+          <div className="panel-heading">
+            <div>
+              <span className="section-kicker"><ShieldCheck size={14} /> {editingId ? "Edit account" : "Create account"}</span>
+              <h2>{editingId ? "Account settings" : "New portal user"}</h2>
+            </div>
+            {editingId && <button type="button" className="link-button" onClick={startNew}>Clear</button>}
+          </div>
+
+          <div className="user-form-grid">
+            <label>Full name<input value={draft.name} onChange={(event) => update("name", event.target.value)} placeholder="e.g. Sam Lee" /></label>
+            <label>Work email<input type="email" value={draft.email} onChange={(event) => update("email", event.target.value)} placeholder="name@company.com" /></label>
+            <label>Role<select value={draft.role} onChange={(event) => update("role", event.target.value as UserRole)}>
+              <option>Viewer</option><option>Manager</option><option>Administrator</option><option>Super Admin</option>
+            </select></label>
+            <label>Department<input value={draft.department} onChange={(event) => update("department", event.target.value)} placeholder="Operations" /></label>
+            <label>{editingId ? "New password (optional)" : "Temporary password"}<input type="password" value={draft.password} onChange={(event) => update("password", event.target.value)} placeholder="Minimum 8 characters" /></label>
+            <label>Account expiry<input type="date" value={draft.expiresOn} onChange={(event) => update("expiresOn", event.target.value)} /></label>
+          </div>
+
+          <div className="user-condition-box">
+            <strong>Sign-in conditions</strong>
+            <label className="condition-toggle"><input type="checkbox" checked={draft.forcePasswordChange} onChange={(event) => update("forcePasswordChange", event.target.checked)} /><span>Require password change on first sign-in</span></label>
+            <label className="condition-toggle"><input type="checkbox" checked={draft.canExport} onChange={(event) => update("canExport", event.target.checked)} /><span>Allow employee data exports</span></label>
+          </div>
+
+          {error && <div className="auth-error-banner">{error}</div>}
+          <button type="submit" className="primary-button user-save-button"><Check size={16} /> {editingId ? "Save changes" : "Create account"}</button>
+        </form>
+
+        <section className="user-list-panel">
+          <div className="panel-heading">
+            <div><span className="section-kicker"><UsersRound size={14} /> Managed users</span><h2>{users.length} portal accounts</h2></div>
+          </div>
+          <div className="managed-user-list">
+            {users.map((user) => (
+              <article className="managed-user-row" key={user.id}>
+                <div className="managed-user-avatar">{user.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</div>
+                <div className="managed-user-details"><strong>{user.name}</strong><span>{user.email}</span><small>{user.department} · {user.role}</small></div>
+                <div className="managed-user-actions">
+                  <span className={`user-status-pill ${user.status.toLowerCase()}`}>{user.status}</span>
+                  <button type="button" className="icon-button" onClick={() => editUser(user)} title={`Edit ${user.name}`}><Edit3 size={15} /></button>
+                  {user.role !== "Super Admin" && <button type="button" className="icon-button" onClick={() => onToggleStatus(user.id)} title={user.status === "Active" ? "Suspend account" : "Activate account"}><ShieldAlert size={15} /></button>}
+                </div>
+              </article>
+            ))}
+          </div>
+          <div className="user-policy-note"><ShieldCheck size={16} /><span>Suspended, expired, or password-reset-required accounts are blocked at sign-in.</span></div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [ready, setReady] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [view, setView] = useState<AppView>("overview");
+  const [portalUsers, setPortalUsers] = useState<PortalUser[]>(seedPortalUsers);
+  const [currentUser, setCurrentUser] = useState<PortalUser>(defaultPortalUser);
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [employees, setEmployees] = useState<Employee[]>(seedEmployees);
   const [tab, setTab] = useState<WorkerType>("MC");
@@ -1951,6 +2133,23 @@ export default function Home() {
     const storedViews = localStorage.getItem("workforce_views");
     const storedCols = localStorage.getItem("workforce_columns");
     const storedMode = localStorage.getItem("workforce_view_mode") as ViewMode;
+    const storedUsers = localStorage.getItem("workforce_portal_users_v1");
+    const storedCurrentUser = localStorage.getItem("workforce_current_user_v1");
+
+    if (storedUsers) {
+      try {
+        setPortalUsers(JSON.parse(storedUsers));
+      } catch (e) {
+        setPortalUsers(seedPortalUsers);
+      }
+    }
+    if (storedCurrentUser) {
+      try {
+        setCurrentUser(JSON.parse(storedCurrentUser));
+      } catch (e) {
+        setCurrentUser(defaultPortalUser);
+      }
+    }
 
     if (storedRecords) {
       try {
@@ -2112,7 +2311,38 @@ export default function Home() {
   ).length;
 
   // Actions
-  function login(remember: boolean) {
+  function login(email: string, password: string, remember: boolean) {
+    const managedUser = portalUsers.find((user) => user.email.toLowerCase() === email.toLowerCase());
+    if (managedUser) {
+      if (managedUser.status !== "Active") {
+        setNotice("This account is suspended. Contact a Super Admin.");
+        return;
+      }
+      if (managedUser.expiresOn && managedUser.expiresOn < new Date().toISOString().slice(0, 10)) {
+        setNotice("This account has expired. Contact a Super Admin.");
+        return;
+      }
+      if (managedUser.forcePasswordChange) {
+        setNotice("A password change is required before this account can sign in.");
+        return;
+      }
+      if (managedUser.password && managedUser.password !== password) {
+        setNotice("The email or password is incorrect.");
+        return;
+      }
+      setCurrentUser(managedUser);
+      localStorage.setItem("workforce_current_user_v1", JSON.stringify(managedUser));
+    } else {
+      const normalUser: PortalUser = {
+        ...defaultPortalUser,
+        name: email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Portal User",
+        email,
+        role: "Viewer",
+        department: "Operations",
+      };
+      setCurrentUser(normalUser);
+      localStorage.setItem("workforce_current_user_v1", JSON.stringify(normalUser));
+    }
     (remember ? localStorage : sessionStorage).setItem("workforce_session", "active");
     setAuthenticated(true);
     setNotice("Authenticated successfully. Welcome to T2C AI NEXUS.");
@@ -2121,7 +2351,34 @@ export default function Home() {
   function logout() {
     localStorage.removeItem("workforce_session");
     sessionStorage.removeItem("workforce_session");
+    localStorage.removeItem("workforce_current_user_v1");
     setAuthenticated(false);
+    setView("overview");
+  }
+
+  function savePortalUser(user: PortalUser) {
+    setPortalUsers((current) => {
+      const record = user.id === 0
+        ? { ...user, id: Math.max(0, ...current.map((item) => item.id)) + 1 }
+        : user;
+      const next = current.some((item) => item.id === record.id)
+        ? current.map((item) => (item.id === record.id ? record : item))
+        : [record, ...current];
+      localStorage.setItem("workforce_portal_users_v1", JSON.stringify(next));
+      setNotice(user.id === 0 ? "Portal account created successfully." : "Portal account updated successfully.");
+      return next;
+    });
+  }
+
+  function togglePortalUserStatus(id: number) {
+    setPortalUsers((current) => {
+      const next = current.map((user) => user.id === id
+        ? { ...user, status: (user.status === "Active" ? "Suspended" : "Active") as UserStatus }
+        : user);
+      localStorage.setItem("workforce_portal_users_v1", JSON.stringify(next));
+      setNotice("Portal account status updated.");
+      return next;
+    });
   }
 
   function handleSort(key: ColumnKey) {
@@ -2210,6 +2467,10 @@ export default function Home() {
   }
 
   function exportCsv() {
+    if (!currentUser.canExport && currentUser.role !== "Super Admin") {
+      setNotice("Your account is not allowed to export employee data.");
+      return;
+    }
     const headers = [
       "Worker Code",
       "Name",
@@ -2382,10 +2643,26 @@ export default function Home() {
             <span className="badge">{employees.filter((e) => e.type === "SC").length}</span>
           </button>
 
-          <button onClick={exportCsv}>
-            <FileSpreadsheet size={17} />
-            <span>{t.exportAudit}</span>
-          </button>
+          {(currentUser.canExport || currentUser.role === "Super Admin") && (
+            <button onClick={exportCsv}>
+              <FileSpreadsheet size={17} />
+              <span>{t.exportAudit}</span>
+            </button>
+          )}
+
+          {currentUser.role === "Super Admin" && (
+            <button
+              className={view === "users" ? "active" : ""}
+              onClick={() => {
+                setView("users");
+                setSidebarOpen(false);
+              }}
+            >
+              <UserCog size={17} />
+              <span>User Management</span>
+              <span className="badge">{portalUsers.length}</span>
+            </button>
+          )}
         </nav>
 
         {/* Sidebar Quota Gauge */}
@@ -2417,10 +2694,10 @@ export default function Home() {
 
         {/* User Profile Card */}
         <div className="sidebar-profile">
-          <div className="avatar">AM</div>
+          <div className="avatar">{currentUser.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</div>
           <div className="sidebar-profile-info">
-            <strong>Alex Morgan</strong>
-            <span>Operations Director</span>
+            <strong>{currentUser.name}</strong>
+            <span>{currentUser.role}</span>
           </div>
           <button className="icon-button" onClick={logout} title={t.signOut}>
             <LogOut size={16} />
@@ -2450,7 +2727,9 @@ export default function Home() {
             <div className="topbar-breadcrumb">
               <span>{t.brandName}</span>
               <ChevronRight size={14} />
-              <strong>{view === "overview" ? t.overview : t.employeeRecords}</strong>
+              <strong>
+                {view === "overview" ? t.overview : view === "users" ? "User Management" : t.employeeRecords}
+              </strong>
             </div>
           </div>
 
@@ -2573,7 +2852,13 @@ export default function Home() {
 
         {/* MAIN BODY CONTENT */}
         <main className="content">
-          {view === "overview" ? (
+          {view === "users" && currentUser.role === "Super Admin" ? (
+            <UserManagementScreen
+              users={portalUsers}
+              onSave={savePortalUser}
+              onToggleStatus={togglePortalUserStatus}
+            />
+          ) : view === "overview" ? (
             <OverviewScreen
               employees={employees}
               summary={summary}
