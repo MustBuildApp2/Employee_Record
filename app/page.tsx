@@ -2366,6 +2366,10 @@ export default function Home() {
         ? current.map((item) => (item.id === record.id ? record : item))
         : [record, ...current];
       localStorage.setItem("workforce_portal_users_v1", JSON.stringify(next));
+      if (record.id === currentUser.id) {
+        setCurrentUser(record);
+        localStorage.setItem("workforce_current_user_v1", JSON.stringify(record));
+      }
       setNotice(user.id === 0 ? "Portal account created successfully." : "Portal account updated successfully.");
       return next;
     });
