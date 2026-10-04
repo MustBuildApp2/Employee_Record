@@ -494,6 +494,12 @@ function Login({
     window.setTimeout(() => onSuccess(email.trim().toLowerCase(), password, true), 500);
   }
 
+  function fillDemoAccount(user: PortalUser) {
+    setEmail(user.email);
+    setPassword(user.password);
+    setError("");
+  }
+
   return (
     <main className="login-page">
       <section className="login-auth-panel">
@@ -547,6 +553,23 @@ function Login({
               </span>
               <h1>{t.welcomeBack}</h1>
               <p>{t.portalSubtitle}</p>
+            </div>
+
+            <div className="demo-role-section" aria-label="Demo accounts">
+              <span>Demo accounts</span>
+              <div className="demo-role-grid">
+                {seedPortalUsers.map((user) => (
+                  <button
+                    type="button"
+                    className="demo-role-btn"
+                    key={user.email}
+                    onClick={() => fillDemoAccount(user)}
+                  >
+                    {user.role}
+                    <small>{user.email}</small>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Form */}
@@ -2073,6 +2096,7 @@ export default function Home() {
   const [view, setView] = useState<AppView>("overview");
   const [portalUsers, setPortalUsers] = useState<PortalUser[]>(seedPortalUsers);
   const [currentUser, setCurrentUser] = useState<PortalUser>(defaultPortalUser);
+  const [userEditorKey, setUserEditorKey] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [employees, setEmployees] = useState<Employee[]>(seedEmployees);
   const [tab, setTab] = useState<WorkerType>("MC");
@@ -2742,6 +2766,20 @@ export default function Home() {
               </div>
             )}
 
+            {currentUser.role === "Super Admin" && (
+              <button
+                type="button"
+                className="secondary-button compact"
+                onClick={() => {
+                  setUserEditorKey((key) => key + 1);
+                  setView("users");
+                }}
+              >
+                <UserCog size={14} />
+                <span>Create User</span>
+              </button>
+            )}
+
             {/* Dark / Light Mode Switcher in Topbar */}
             <button
               type="button"
@@ -2854,6 +2892,7 @@ export default function Home() {
         <main className="content">
           {view === "users" && currentUser.role === "Super Admin" ? (
             <UserManagementScreen
+              key={userEditorKey}
               users={portalUsers}
               onSave={savePortalUser}
               onToggleStatus={togglePortalUserStatus}
