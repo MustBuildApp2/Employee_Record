@@ -175,14 +175,46 @@ function templateDate(value: string) {
   return `${day}-${month}-${year}`;
 }
 
-function normalizeImportDate(value: string) {
-  const date = value.trim();
+function isValidDate(date: Date) {
+  return !Number.isNaN(date.getTime());
+}
+
+function toIsoDate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeImportDate(value: unknown, fallback = "") {
+  if (value instanceof Date && isValidDate(value)) return toIsoDate(value);
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    excelEpoch.setUTCDate(excelEpoch.getUTCDate() + Math.floor(value));
+    return toIsoDate(excelEpoch);
+  }
+
+  const date = String(value ?? "").trim();
+  if (!date) return fallback;
+
+  if (/^\d+(\.\d+)?$/.test(date)) {
+    return normalizeImportDate(Number(date), fallback);
+  }
+
+  const iso = date.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/);
+  if (iso) {
+    const [, year, month, day] = iso;
+    const normalized = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    return isValidDate(new Date(normalized + "T00:00:00")) ? normalized : fallback;
+  }
+
   const ddmmyyyy = date.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/);
   if (ddmmyyyy) {
     const [, day, month, year] = ddmmyyyy;
-    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    const normalized = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    return isValidDate(new Date(normalized + "T00:00:00")) ? normalized : fallback;
   }
-  return date;
+
+  const parsed = new Date(date);
+  return isValidDate(parsed) ? toIsoDate(parsed) : fallback;
 }
 
 const seedEmployees: Employee[] = [
@@ -422,7 +454,9 @@ function daysUntil(value: string) {
   if (!value) return 999;
   const now = new Date();
   now.setHours(0, 0, 0, 0);
-  return Math.round((new Date(value + "T00:00:00").getTime() - now.getTime()) / 86400000);
+  const target = new Date(value + "T00:00:00");
+  if (!isValidDate(target)) return 999;
+  return Math.round((target.getTime() - now.getTime()) / 86400000);
 }
 
 function expiryState(value: string): Exclude<ExpiryFilter, "all"> {
@@ -432,11 +466,13 @@ function expiryState(value: string): Exclude<ExpiryFilter, "all"> {
 
 function formatDate(value: string) {
   if (!value) return "—";
+  const date = new Date(value + "T00:00:00");
+  if (!isValidDate(date)) return "—";
   return new Intl.DateTimeFormat("en-SG", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  }).format(new Date(value + "T00:00:00"));
+  }).format(date);
 }
 
 /* ==========================================================================
@@ -750,6 +786,208 @@ function downloadSampleCsvFile() {
   URL.revokeObjectURL(url);
 }
 
+function parseCsvRows(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"' && quoted && next === '"') {
+      cell += '"';
+      i += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      quoted = !quoted;
+      continue;
+    }
+
+    if (char === "," && !quoted) {
+      row.push(cell.trim());
+      cell = "";
+      continue;
+    }
+
+    if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") i += 1;
+      row.push(cell.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      cell = "";
+      continue;
+    }
+
+    cell += char;
+  }
+
+  row.push(cell.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
+}
+
+async function inflateZipEntry(data: Uint8Array, method: number) {
+  if (method === 0) return data;
+  if (method !== 8) throw new Error("Unsupported Excel compression format.");
+
+  const buffer = new ArrayBuffer(data.byteLength);
+  new Uint8Array(buffer).set(data);
+  const stream = new Blob([buffer]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function readZipEntries(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  let eocdOffset = -1;
+
+  for (let i = bytes.length - 22; i >= 0; i -= 1) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      eocdOffset = i;
+      break;
+    }
+  }
+
+  if (eocdOffset < 0) throw new Error("Invalid Excel file.");
+
+  const entryCount = view.getUint16(eocdOffset + 10, true);
+  let cursor = view.getUint32(eocdOffset + 16, true);
+  const decoder = new TextDecoder();
+  const entries = new Map<string, string>();
+
+  for (let i = 0; i < entryCount; i += 1) {
+    if (view.getUint32(cursor, true) !== 0x02014b50) break;
+
+    const method = view.getUint16(cursor + 10, true);
+    const compressedSize = view.getUint32(cursor + 20, true);
+    const nameLength = view.getUint16(cursor + 28, true);
+    const extraLength = view.getUint16(cursor + 30, true);
+    const commentLength = view.getUint16(cursor + 32, true);
+    const localOffset = view.getUint32(cursor + 42, true);
+    const name = decoder.decode(bytes.slice(cursor + 46, cursor + 46 + nameLength));
+
+    const localNameLength = view.getUint16(localOffset + 26, true);
+    const localExtraLength = view.getUint16(localOffset + 28, true);
+    const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+    const compressed = bytes.slice(dataStart, dataStart + compressedSize);
+    const inflated = await inflateZipEntry(compressed, method);
+    entries.set(name, decoder.decode(inflated));
+
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+
+  return entries;
+}
+
+function xmlText(node: Element, tagName: string) {
+  return node.getElementsByTagName(tagName)[0]?.textContent || "";
+}
+
+function parseSharedStrings(xml: string) {
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  return Array.from(doc.getElementsByTagName("si")).map((item) =>
+    Array.from(item.getElementsByTagName("t")).map((text) => text.textContent || "").join("")
+  );
+}
+
+function columnIndex(cellRef: string) {
+  const letters = cellRef.replace(/\d+/g, "");
+  return letters.split("").reduce((sum, letter) => sum * 26 + letter.charCodeAt(0) - 64, 0) - 1;
+}
+
+async function parseXlsxRows(file: File) {
+  const entries = await readZipEntries(await file.arrayBuffer());
+  const sharedStrings = entries.has("xl/sharedStrings.xml")
+    ? parseSharedStrings(entries.get("xl/sharedStrings.xml") || "")
+    : [];
+  const sheetXml = entries.get("xl/worksheets/sheet1.xml");
+  if (!sheetXml) throw new Error("The Excel file has no readable first sheet.");
+
+  const doc = new DOMParser().parseFromString(sheetXml, "application/xml");
+  return Array.from(doc.getElementsByTagName("row")).map((row) => {
+    const values: string[] = [];
+    Array.from(row.getElementsByTagName("c")).forEach((cell) => {
+      const ref = cell.getAttribute("r") || "";
+      const type = cell.getAttribute("t");
+      const index = ref ? columnIndex(ref) : values.length;
+      const raw = type === "inlineStr" ? xmlText(cell, "t") : xmlText(cell, "v");
+      values[index] = type === "s" ? sharedStrings[Number(raw)] || "" : raw;
+    });
+    return values.map((value) => String(value || "").trim());
+  }).filter((row) => row.some(Boolean));
+}
+
+function rowsToEmployees(rows: string[][]) {
+  return rows.slice(1).map((val, idx): Employee => ({
+    id: Date.now() + idx,
+    type: (val[0] && val[0].startsWith("SC")) ? "SC" : "MC",
+    code: val[0] || `IMP-${idx + 100}`,
+    name: val[1] || `Imported Worker ${idx + 1}`,
+    passType: val[2] || "Work Permit",
+    nationality: val[3] || "Foreign Worker",
+    country: val[4] || val[3] || "Foreign Worker",
+    citizen: val[2] === "Citizen" ? "Citizen" : "Non-Citizen",
+    designation: val[5] || "General Worker",
+    wpExpiry: normalizeImportDate(val[6], isoDate(90)),
+    passportExpiry: normalizeImportDate(val[7], isoDate(365)),
+    csocExpiry: normalizeImportDate(val[8], isoDate(180)),
+    finNumber: val[9] || "",
+    workPermitNo: val[10] || "",
+    phone: val[11] || "",
+    email: val[12] || "",
+    status: (val[13] === "Pending" || val[13] === "Inactive" ? val[13] : "Active") as WorkerStatus,
+    dob: "1994-01-01",
+    passportNo: "",
+    csoc: "",
+    documents: [],
+  }));
+}
+
+function normalizeDuplicateToken(value: string) {
+  const token = String(value || "").trim().toLowerCase();
+  return token && !["n/a", "na", "none", "-", "--"].includes(token) ? token : "";
+}
+
+function employeeDuplicateKeys(employee: Employee) {
+  return [
+    ["code", employee.code],
+    ["fin", employee.finNumber],
+    ["workPermit", employee.workPermitNo],
+    ["passport", employee.passportNo],
+    ["email", employee.email],
+  ]
+    .map(([field, value]) => {
+      const token = normalizeDuplicateToken(value);
+      return token ? `${field}:${token}` : "";
+    })
+    .filter(Boolean);
+}
+
+function uniqueImportRecords(incoming: Employee[], existing: Employee[]) {
+  const seen = new Set(existing.flatMap(employeeDuplicateKeys));
+  const unique: Employee[] = [];
+  let skipped = 0;
+
+  incoming.forEach((employee) => {
+    const keys = employeeDuplicateKeys(employee);
+    const isDuplicate = keys.length > 0 && keys.some((key) => seen.has(key));
+
+    if (isDuplicate) {
+      skipped += 1;
+      return;
+    }
+
+    keys.forEach((key) => seen.add(key));
+    unique.push(employee);
+  });
+
+  return { unique, skipped };
+}
+
 function ImportModal({
   lang,
   onClose,
@@ -762,6 +1000,7 @@ function ImportModal({
   const t = translations[lang] || translations.en;
   const [parsedRows, setParsedRows] = useState<Employee[]>([]);
   const [fileName, setFileName] = useState("");
+  const [importError, setImportError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function downloadSampleCsv() {
@@ -772,43 +1011,23 @@ function ImportModal({
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     setFileName(file.name);
+    setParsedRows([]);
+    setImportError("");
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = String(reader.result || "");
-      const lines = text.split(/\r?\n/).filter(Boolean);
-      if (lines.length <= 1) return;
-
-      const records: Employee[] = lines.slice(1).map((line, idx) => {
-        const val = line.split(",").map((v) => v.replace(/^"|"$/g, "").trim());
-        return {
-          id: Date.now() + idx,
-          type: (val[0] && val[0].startsWith("SC")) ? "SC" : "MC",
-          code: val[0] || `IMP-${idx + 100}`,
-          name: val[1] || `Imported Worker ${idx + 1}`,
-          passType: val[2] || "Work Permit",
-          nationality: val[3] || "Foreign Worker",
-          country: val[4] || val[3] || "Foreign Worker",
-          citizen: val[2] === "Citizen" ? "Citizen" : "Non-Citizen",
-          designation: val[5] || "General Worker",
-          wpExpiry: normalizeImportDate(val[6] || isoDate(90)),
-          passportExpiry: normalizeImportDate(val[7] || isoDate(365)),
-          csocExpiry: normalizeImportDate(val[8] || isoDate(180)),
-          finNumber: val[9] || "",
-          workPermitNo: val[10] || "",
-          phone: val[11] || "",
-          email: val[12] || "",
-          status: (val[13] === "Pending" ? "Pending" : "Active") as WorkerStatus,
-          dob: "1994-01-01",
-          passportNo: "",
-          csoc: "",
-          documents: [],
-        };
-      });
-
+    const loadRows = async () => {
+      const lowerName = file.name.toLowerCase();
+      const rows = lowerName.endsWith(".xlsx")
+        ? await parseXlsxRows(file)
+        : parseCsvRows(await file.text());
+      if (rows.length <= 1) throw new Error("No employee rows were found in the file.");
+      const records = rowsToEmployees(rows);
+      if (!records.length) throw new Error("No employee rows were found in the file.");
       setParsedRows(records);
     };
-    reader.readAsText(file);
+
+    loadRows().catch((error: Error) => {
+      setImportError(error.message || "Unable to read this import file.");
+    });
   }
 
   return (
@@ -868,6 +1087,13 @@ function ImportModal({
               onChange={handleFileSelect}
             />
           </div>
+
+          {importError && (
+            <div className="import-error-banner">
+              <AlertCircle size={16} />
+              <span>{importError}</span>
+            </div>
+          )}
 
           {/* Preview Parsed Rows */}
           {parsedRows.length > 0 && (
@@ -2523,8 +2749,19 @@ export default function Home() {
   }
 
   function handleBatchImport(newWorkers: Employee[]) {
-    setEmployees((curr) => [...newWorkers, ...curr]);
-    setNotice(`Successfully imported ${newWorkers.length} personnel records into ${tab}.`);
+    const { unique, skipped } = uniqueImportRecords(newWorkers, employees);
+
+    if (unique.length > 0) {
+      setEmployees((curr) => [...unique, ...curr]);
+    }
+
+    if (skipped > 0 && unique.length > 0) {
+      setNotice(`Imported ${unique.length} personnel record(s) into ${tab}. Skipped ${skipped} duplicate row(s).`);
+    } else if (skipped > 0) {
+      setNotice(`No new records imported. Skipped ${skipped} duplicate row(s).`);
+    } else {
+      setNotice(`Successfully imported ${unique.length} personnel records into ${tab}.`);
+    }
   }
 
   if (!ready) {
