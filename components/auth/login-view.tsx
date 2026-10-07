@@ -3,7 +3,6 @@
 import {
   AlertCircle,
   ArrowRight,
-  Building2,
   Eye,
   EyeOff,
   Globe,
@@ -15,6 +14,7 @@ import {
   ShieldCheck,
   Sun,
 } from "lucide-react";
+import Image from "next/image";
 import { FormEvent, useEffect, useState } from "react";
 import { Language, translations } from "@/app/i18n";
 import LoginScene from "./login-scene";
@@ -108,13 +108,9 @@ export function LoginView({
           <div className="login-shell">
             {/* Clean Brand Header */}
             <div className="login-brand">
-              <span className="brand-mark">
-                <Building2 size={24} />
+              <span className="brand-logo-frame login-logo-frame">
+                <Image src="/mie-tech/mie-tech-logo.png" alt="MIE-TECH logo" width={3057} height={999} priority />
               </span>
-              <div className="login-brand-meta">
-                <strong>{t.brandName}</strong>
-                <span>{t.brandSub}</span>
-              </div>
             </div>
 
             {/* Clean Heading */}
@@ -227,7 +223,7 @@ export function LoginView({
         <div className="login-shell">
           <footer className="login-compliance-footer">
             <div className="login-footer-copy">
-              © 2026 T2C AI NEXUS. All rights reserved.
+              © 2026 MIE-TECH. All rights reserved.
             </div>
           </footer>
         </div>
