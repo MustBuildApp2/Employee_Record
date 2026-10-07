@@ -2535,6 +2535,35 @@ input[type="checkbox"] {
   font-size: 12px;
 }
 
+.managed-password-field {
+  position: relative;
+  display: block;
+}
+
+.managed-password-field input {
+  padding-right: 40px;
+}
+
+.managed-password-field button {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.managed-password-field button:hover {
+  background: var(--surface);
+  color: var(--text-main);
+}
+
 .user-condition-box {
   display: grid;
   gap: 10px;
@@ -2562,6 +2591,13 @@ input[type="checkbox"] {
   width: 15px;
   height: 15px;
   accent-color: #10b981;
+}
+
+.condition-warning {
+  margin: -2px 0 0 23px;
+  color: #b45309;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .user-save-button {

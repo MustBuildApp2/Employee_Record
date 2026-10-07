@@ -2212,6 +2212,7 @@ function UserManagementScreen({
   };
   const [draft, setDraft] = useState<PortalUser>(emptyUser);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [showManagedPassword, setShowManagedPassword] = useState(false);
   const [error, setError] = useState("");
 
   function update<K extends keyof PortalUser>(key: K, value: PortalUser[K]) {
@@ -2221,12 +2222,14 @@ function UserManagementScreen({
   function startNew() {
     setEditingId(null);
     setDraft({ ...emptyUser, createdAt: new Date().toISOString().slice(0, 10) });
+    setShowManagedPassword(false);
     setError("");
   }
 
   function editUser(user: PortalUser) {
     setEditingId(user.id);
-    setDraft({ ...user, password: "" });
+    setDraft({ ...user });
+    setShowManagedPassword(false);
     setError("");
   }
 
@@ -2283,13 +2286,14 @@ function UserManagementScreen({
               <option>Viewer</option><option>Manager</option><option>Administrator</option><option>Super Admin</option>
             </select></label>
             <label>Department<input value={draft.department} onChange={(event) => update("department", event.target.value)} placeholder="Operations" /></label>
-            <label>{editingId ? "New password (optional)" : "Temporary password"}<input type="password" value={draft.password} onChange={(event) => update("password", event.target.value)} placeholder="Minimum 8 characters" /></label>
+            <label>{editingId ? "Password" : "Temporary password"}<span className="managed-password-field"><input type={showManagedPassword ? "text" : "password"} value={draft.password} onChange={(event) => update("password", event.target.value)} placeholder="Minimum 8 characters" /><button type="button" onClick={() => setShowManagedPassword((visible) => !visible)} title={showManagedPassword ? "Hide password" : "Show password"}>{showManagedPassword ? <EyeOff size={15} /> : <Eye size={15} />}</button></span></label>
             <label>Account expiry<input type="date" value={draft.expiresOn} onChange={(event) => update("expiresOn", event.target.value)} /></label>
           </div>
 
           <div className="user-condition-box">
             <strong>Sign-in conditions</strong>
             <label className="condition-toggle"><input type="checkbox" checked={draft.forcePasswordChange} onChange={(event) => update("forcePasswordChange", event.target.checked)} /><span>Require password change on first sign-in</span></label>
+            {draft.forcePasswordChange && <p className="condition-warning">This account cannot sign in until this option is unchecked and saved.</p>}
             <label className="condition-toggle"><input type="checkbox" checked={draft.canExport} onChange={(event) => update("canExport", event.target.checked)} /><span>Allow employee data exports</span></label>
           </div>
 
