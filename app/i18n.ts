@@ -87,8 +87,8 @@ export interface Translations {
 
 export const translations: Record<Language, Translations> = {
   en: {
-    brandName: "T2C AI NEXUS",
-    brandSub: "Workforce Management",
+    brandName: "MIE-TECH",
+    brandSub: "Building for Life",
     operationsPortal: "Operations Portal",
     portalSubtitle: "Sign in to manage employee records, work passes, and safety certificates.",
     welcomeBack: "Welcome back",
@@ -166,8 +166,8 @@ export const translations: Record<Language, Translations> = {
   },
 
   zh: {
-    brandName: "T2C AI NEXUS",
-    brandSub: "Workforce Management",
+    brandName: "MIE-TECH",
+    brandSub: "Building for Life",
     operationsPortal: "运营管理门户",
     portalSubtitle: "登录以管理组织的人员档案、安全资质和合规性验证。",
     welcomeBack: "欢迎回来",
@@ -245,8 +245,8 @@ export const translations: Record<Language, Translations> = {
   },
 
   ta: {
-    brandName: "T2C AI NEXUS",
-    brandSub: "Workforce Management",
+    brandName: "MIE-TECH",
+    brandSub: "Building for Life",
     operationsPortal: "செயல்பாட்டு போர்டல்",
     portalSubtitle: "பணியாளர் பதிவுகள் மற்றும் பாதுகாப்பு சான்றிதழ்களை நிர்வகிக்க உள்நுழையவும்.",
     welcomeBack: "மீண்டும் வருக",
@@ -324,8 +324,8 @@ export const translations: Record<Language, Translations> = {
   },
 
   bn: {
-    brandName: "T2C AI NEXUS",
-    brandSub: "Workforce Management",
+    brandName: "MIE-TECH",
+    brandSub: "Building for Life",
     operationsPortal: "অপারেশনস পোর্টাল",
     portalSubtitle: "কর্মীদের রেকর্ড, সুরক্ষা পারমিট এবং ডকুমেন্টস পরিচালনা করতে সাইন ইন করুন।",
     welcomeBack: "স্বাগতম",
@@ -403,8 +403,8 @@ export const translations: Record<Language, Translations> = {
   },
 
   ms: {
-    brandName: "T2C AI NEXUS",
-    brandSub: "Workforce Management",
+    brandName: "MIE-TECH",
+    brandSub: "Building for Life",
     operationsPortal: "Portal Operasi",
     portalSubtitle: "Log masuk untuk memantau rekod kakitangan, permit keselamatan, dan kepatuhan.",
     welcomeBack: "Selamat Kembali",

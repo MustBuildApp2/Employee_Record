@@ -9,6 +9,7 @@ import {
   RefreshCw, Search, Send, ShieldAlert, ShieldCheck, Sparkles, Sun, Table2, Trash2,
   Upload, User, UserCheck, UserCog, UsersRound, X,
 } from "lucide-react";
+import Image from "next/image";
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import LoginScene from "./login-scene";
 import { Language, translations } from "./i18n";
@@ -588,13 +589,9 @@ function Login({
           <div className="login-shell">
             {/* Clean Brand Header */}
             <div className="login-brand">
-              <span className="brand-mark">
-                <Building2 size={24} />
+              <span className="brand-logo-frame login-logo-frame">
+                <Image src="/mie-tech/mie-tech-logo.png" alt="MIE-TECH logo" width={3057} height={999} priority />
               </span>
-              <div className="login-brand-meta">
-                <strong>{t.brandName}</strong>
-                <span>{t.brandSub}</span>
-              </div>
             </div>
 
             {/* Clean Heading */}
@@ -714,7 +711,7 @@ function Login({
         <div className="login-shell">
           <footer className="login-compliance-footer">
             <div className="login-footer-copy">
-              © 2026 T2C AI NEXUS. All rights reserved.
+              © 2026 MIE-TECH. All rights reserved.
             </div>
           </footer>
         </div>
@@ -2599,7 +2596,7 @@ export default function Home() {
       localStorage.setItem("workforce_current_user_v1", JSON.stringify(normalUser));
     }
     (remember ? localStorage : sessionStorage).setItem("workforce_session", "active");
-    setNotice("Authenticated successfully. Welcome to T2C AI NEXUS.");
+      setNotice("Authenticated successfully. Welcome to MIE-TECH.");
     window.setTimeout(() => setAuthenticated(true), 700);
     return { ok: true, message: "Authenticated successfully. Opening dashboard..." };
   }
@@ -2806,7 +2803,7 @@ export default function Home() {
         }}
       >
         <RefreshCw className="spin" size={24} />
-        <span>Loading T2C AI NEXUS...</span>
+        <span>Loading MIE-TECH...</span>
       </main>
     );
   }
@@ -2828,13 +2825,9 @@ export default function Home() {
       {/* MODERN EXECUTIVE NAVIGATION SIDEBAR */}
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="sidebar-brand">
-          <span className="brand-mark">
-            <Building2 size={22} />
+          <span className="brand-logo-frame sidebar-logo-frame">
+            <Image src="/mie-tech/mie-tech-logo.png" alt="MIE-TECH logo" width={3057} height={999} priority />
           </span>
-          <div className="sidebar-brand-meta">
-            <strong>{t.brandName}</strong>
-            <small>{t.brandSub}</small>
-          </div>
           <button
             className="icon-button sidebar-close"
             onClick={() => setSidebarOpen(false)}

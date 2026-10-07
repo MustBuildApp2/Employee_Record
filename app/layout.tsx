@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "T2C AI NEXUS | Workforce Management",
+  title: "MIE-TECH | Workforce Management",
   description: "Workforce management for employee records, work passes, and safety certificates.",
 };
 
