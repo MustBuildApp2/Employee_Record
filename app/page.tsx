@@ -20,6 +20,7 @@ type AppView = "overview" | "employees" | "compliance" | "calendar" | "reports" 
 type ViewMode = "table" | "grid";
 type UserRole = "Super Admin" | "Administrator" | "Manager" | "Viewer";
 type UserStatus = "Active" | "Suspended";
+type AuthResult = { ok: true; message: string } | { ok: false; message: string };
 
 type PortalUser = {
   id: number;
@@ -485,7 +486,7 @@ function Login({
   lang,
   onLangChange,
 }: {
-  onSuccess: (email: string, password: string, remember: boolean) => void;
+  onSuccess: (email: string, password: string, remember: boolean) => AuthResult;
   theme: "dark" | "light";
   onToggleTheme: () => void;
   lang: Language;
@@ -497,6 +498,7 @@ function Login({
   const [show, setShow] = useState(false);
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [passkeySupported, setPasskeySupported] = useState(false);
 
@@ -521,13 +523,32 @@ function Login({
     if (!/^\S+@\S+\.\S+$/.test(email)) return setError("Please enter a valid work email address.");
     if (password.length < 6) return setError("Password must contain at least 6 characters.");
     setError("");
+    setSuccess("");
     setLoading(true);
-    window.setTimeout(() => onSuccess(email.trim().toLowerCase(), password, remember), 350);
+    window.setTimeout(() => {
+      const result = onSuccess(email.trim().toLowerCase(), password, remember);
+      if (result.ok) {
+        setSuccess(result.message);
+      } else {
+        setError(result.message);
+        setLoading(false);
+      }
+    }, 350);
   }
 
   function simulatePasskey() {
+    setError("");
+    setSuccess("");
     setLoading(true);
-    window.setTimeout(() => onSuccess(email.trim().toLowerCase(), password, true), 500);
+    window.setTimeout(() => {
+      const result = onSuccess(email.trim().toLowerCase(), password, true);
+      if (result.ok) {
+        setSuccess(result.message);
+      } else {
+        setError(result.message);
+        setLoading(false);
+      }
+    }, 500);
   }
 
   return (
@@ -629,6 +650,13 @@ function Login({
                 <div className="auth-error-banner">
                   <AlertCircle size={16} />
                   <span>{error}</span>
+                </div>
+              )}
+
+              {success && (
+                <div className="auth-error-banner" style={{ background: "#dcfce7", color: "#166534", borderColor: "#86efac" }}>
+                  <CheckCircle2 size={16} />
+                  <span>{success}</span>
                 </div>
               )}
 
@@ -2542,20 +2570,16 @@ export default function Home() {
     const managedUser = portalUsers.find((user) => user.email.toLowerCase() === email.toLowerCase());
     if (managedUser) {
       if (managedUser.status !== "Active") {
-        setNotice("This account is suspended. Contact a Super Admin.");
-        return;
+        return { ok: false, message: "This account is suspended. Contact a Super Admin." };
       }
       if (managedUser.expiresOn && managedUser.expiresOn < new Date().toISOString().slice(0, 10)) {
-        setNotice("This account has expired. Contact a Super Admin.");
-        return;
+        return { ok: false, message: "This account has expired. Contact a Super Admin." };
       }
       if (managedUser.forcePasswordChange) {
-        setNotice("A password change is required before this account can sign in.");
-        return;
+        return { ok: false, message: "A password change is required before this account can sign in. Ask a Super Admin to clear the first sign-in password reset." };
       }
       if (managedUser.password && managedUser.password !== password) {
-        setNotice("The email or password is incorrect.");
-        return;
+        return { ok: false, message: "The email or password is incorrect." };
       }
       setCurrentUser(managedUser);
       localStorage.setItem("workforce_current_user_v1", JSON.stringify(managedUser));
@@ -2571,8 +2595,9 @@ export default function Home() {
       localStorage.setItem("workforce_current_user_v1", JSON.stringify(normalUser));
     }
     (remember ? localStorage : sessionStorage).setItem("workforce_session", "active");
-    setAuthenticated(true);
     setNotice("Authenticated successfully. Welcome to T2C AI NEXUS.");
+    window.setTimeout(() => setAuthenticated(true), 700);
+    return { ok: true, message: "Authenticated successfully. Opening dashboard..." };
   }
 
   function logout() {
