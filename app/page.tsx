@@ -1857,6 +1857,7 @@ function OverviewScreen({
   employees,
   summary,
   attention,
+  userName,
   lang,
   onOpenRecords,
   onCreate,
@@ -1870,6 +1871,7 @@ function OverviewScreen({
     csoc: { valid: number; expiring: number; expired: number };
   };
   attention: number;
+  userName: string;
   lang: Language;
   onOpenRecords: () => void;
   onCreate: () => void;
@@ -1929,7 +1931,7 @@ function OverviewScreen({
           <span className="hero-welcome-badge">
             <Sparkles size={12} /> Workforce Overview
           </span>
-          <h1>{t.welcomeUser}</h1>
+          <h1>{t.welcomeUser}, {userName}</h1>
           <p>
             {t.commandSubtitle} Document Validity: <strong>{readiness}%</strong>.
             {attention > 0 && (
@@ -2369,11 +2371,6 @@ export default function Home() {
 
   // Initialize from storage
   useEffect(() => {
-    const isAuth =
-      localStorage.getItem("workforce_session") === "active" ||
-      sessionStorage.getItem("workforce_session") === "active";
-    setAuthenticated(isAuth);
-
     const storedTheme = localStorage.getItem("workforce_theme_v2") as "dark" | "light";
     if (storedTheme) {
       setTheme(storedTheme);
@@ -2391,6 +2388,10 @@ export default function Home() {
     const storedMode = localStorage.getItem("workforce_view_mode") as ViewMode;
     const storedUsers = localStorage.getItem("workforce_portal_users_v1");
     const storedCurrentUser = localStorage.getItem("workforce_current_user_v1");
+    const isAuth =
+      localStorage.getItem("workforce_session") === "active" ||
+      sessionStorage.getItem("workforce_session") === "active";
+    let restoredCurrentUser = false;
 
     if (storedUsers) {
       try {
@@ -2402,10 +2403,16 @@ export default function Home() {
     if (storedCurrentUser) {
       try {
         setCurrentUser(JSON.parse(storedCurrentUser));
+        restoredCurrentUser = true;
       } catch (e) {
         setCurrentUser(defaultPortalUser);
       }
     }
+    if (isAuth && !restoredCurrentUser) {
+      localStorage.removeItem("workforce_session");
+      sessionStorage.removeItem("workforce_session");
+    }
+    setAuthenticated(isAuth && restoredCurrentUser);
 
     if (storedRecords) {
       try {
@@ -3142,6 +3149,7 @@ export default function Home() {
               employees={employees}
               summary={summary}
               attention={attentionCount}
+              userName={currentUser.name}
               lang={lang}
               onOpenRecords={() => setView("employees")}
               onCreate={() => {
