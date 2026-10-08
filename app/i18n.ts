@@ -113,7 +113,7 @@ export const translations: Record<Language, Translations> = {
     managementAudits: "Management & Audits",
     workforceReadiness: "Document Validity",
 
-    welcomeUser: "Welcome back, Alex Morgan",
+    welcomeUser: "Welcome back",
     commandSubtitle: "Monitor employee records, document validity, and upcoming renewals.",
     viewWorkforce: "View Employees",
     createWorker: "Add Employee",
@@ -192,7 +192,7 @@ export const translations: Record<Language, Translations> = {
     managementAudits: "管理与审计",
     workforceReadiness: "人员就绪合规率",
 
-    welcomeUser: "欢迎回来，Alex Morgan",
+    welcomeUser: "欢迎回来",
     commandSubtitle: "实时员工合规率指数。随时监控证件到期和安全施工许可。",
     viewWorkforce: "查看全体人员",
     createWorker: "登记新工人",
@@ -271,7 +271,7 @@ export const translations: Record<Language, Translations> = {
     managementAudits: "மேலாண்மை",
     workforceReadiness: "பணியாளர் தயார்நிலை",
 
-    welcomeUser: "வணக்கம், Alex Morgan",
+    welcomeUser: "வணக்கம்",
     commandSubtitle: "நிகழ்நேர பணியாளர் சான்றிதழ் நிலை மற்றும் காலாவதி கண்காணிப்பு.",
     viewWorkforce: "பணியாளர்களைக் காண்க",
     createWorker: "புதிய தொழிலாளர் சேர்க்க",
@@ -350,7 +350,7 @@ export const translations: Record<Language, Translations> = {
     managementAudits: "ব্যবস্থাপনা",
     workforceReadiness: "কমপ্লায়েন্স স্কোর",
 
-    welcomeUser: "স্বাগতম, Alex Morgan",
+    welcomeUser: "স্বাগতম",
     commandSubtitle: "রিয়েল-টাইম ওয়ার্কফোর্স কমপ্লায়েন্স ও নিরাপত্তা পারমিট পর্যবেক্ষণ।",
     viewWorkforce: "কর্মী তালিকা দেখুন",
     createWorker: "নতুন কর্মী যুক্ত করুন",
@@ -429,7 +429,7 @@ export const translations: Record<Language, Translations> = {
     managementAudits: "Pengurusan & Audit",
     workforceReadiness: "Kesiapsiagaan Tenaga Kerja",
 
-    welcomeUser: "Selamat kembali, Alex Morgan",
+    welcomeUser: "Selamat kembali",
     commandSubtitle: "Indeks kepatuhan masa nyata bagi permit dan pensijilan keselamatan.",
     viewWorkforce: "Lihat Semua Pekerja",
     createWorker: "Daftar Pekerja Baru",
