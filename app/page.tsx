@@ -90,6 +90,14 @@ type Employee = {
   csoc: string;
   csocExpiry: string;
   documents: string[];
+  documentUrls?: Record<string, string>;
+  documentMeta?: Record<string, DocumentMeta>;
+};
+
+type DocumentMeta = {
+  size: number;
+  uploadedAt: string;
+  type: string;
 };
 
 type FilterState = {
@@ -977,6 +985,227 @@ function normalizeDuplicateToken(value: string) {
   return token && !["n/a", "na", "none", "-", "--"].includes(token) ? token : "";
 }
 
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function openDocumentUrl(url: string) {
+  let openUrl = url;
+
+  if (url.startsWith("data:")) {
+    const blob = await fetch(url).then((response) => response.blob());
+    openUrl = URL.createObjectURL(blob);
+    window.setTimeout(() => URL.revokeObjectURL(openUrl), 60000);
+  }
+
+  window.open(openUrl, "_blank", "noopener,noreferrer");
+}
+
+function downloadDocumentUrl(url: string, filename: string) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+}
+
+function documentExtension(name: string) {
+  return name.split(".").pop()?.toUpperCase() || "FILE";
+}
+
+function documentType(name: string, meta?: DocumentMeta) {
+  return meta?.type || documentExtension(name);
+}
+
+function documentSizeLabel(size?: number) {
+  if (!size) return "—";
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function documentUploadedLabel(uploadedAt?: string) {
+  if (!uploadedAt) return "—";
+  return new Date(uploadedAt).toLocaleString("en-SG", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function documentTypeClass(type: string) {
+  const normalized = type.toLowerCase();
+  if (normalized === "pdf") return "pdf";
+  if (["jpg", "jpeg", "png"].includes(normalized)) return "image";
+  if (["doc", "docx"].includes(normalized)) return "doc";
+  return "other";
+}
+
+function documentMetaFromFiles(files: File[]) {
+  const uploadedAt = new Date().toISOString();
+  return Object.fromEntries(
+    files.map((file) => [
+      file.name,
+      {
+        size: file.size,
+        uploadedAt,
+        type: documentExtension(file.name),
+      },
+    ])
+  );
+}
+
+function sanitizeFilePart(value: string) {
+  return value.trim().replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").replace(/\s+/g, "_") || "employee";
+}
+
+function dataUrlToBytes(url: string) {
+  if (!url.startsWith("data:")) return new TextEncoder().encode(url);
+  const [, payload = ""] = url.split(",");
+  const binary = atob(payload);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+const crcTable = new Uint32Array(256).map((_, index) => {
+  let crc = index;
+  for (let bit = 0; bit < 8; bit += 1) {
+    crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
+  }
+  return crc >>> 0;
+});
+
+function crc32(bytes: Uint8Array) {
+  let crc = 0xffffffff;
+  bytes.forEach((byte) => {
+    crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  });
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function dosDateTime(date = new Date()) {
+  const year = Math.max(1980, date.getFullYear());
+  return {
+    date: ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
+    time: (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2),
+  };
+}
+
+function createZip(entries: { path: string; data: Uint8Array }[]) {
+  const encoder = new TextEncoder();
+  const parts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+  let offset = 0;
+  const stamp = dosDateTime();
+
+  entries.forEach((entry) => {
+    const nameBytes = encoder.encode(entry.path);
+    const crc = crc32(entry.data);
+
+    const local = new Uint8Array(30 + nameBytes.length);
+    const localView = new DataView(local.buffer);
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(6, 0x0800, true);
+    localView.setUint16(8, 0, true);
+    localView.setUint16(10, stamp.time, true);
+    localView.setUint16(12, stamp.date, true);
+    localView.setUint32(14, crc, true);
+    localView.setUint32(18, entry.data.length, true);
+    localView.setUint32(22, entry.data.length, true);
+    localView.setUint16(26, nameBytes.length, true);
+    local.set(nameBytes, 30);
+    parts.push(local, entry.data);
+
+    const central = new Uint8Array(46 + nameBytes.length);
+    const centralView = new DataView(central.buffer);
+    centralView.setUint32(0, 0x02014b50, true);
+    centralView.setUint16(4, 20, true);
+    centralView.setUint16(6, 20, true);
+    centralView.setUint16(8, 0x0800, true);
+    centralView.setUint16(10, 0, true);
+    centralView.setUint16(12, stamp.time, true);
+    centralView.setUint16(14, stamp.date, true);
+    centralView.setUint32(16, crc, true);
+    centralView.setUint32(20, entry.data.length, true);
+    centralView.setUint32(24, entry.data.length, true);
+    centralView.setUint16(28, nameBytes.length, true);
+    centralView.setUint32(42, offset, true);
+    central.set(nameBytes, 46);
+    centralParts.push(central);
+
+    offset += local.length + entry.data.length;
+  });
+
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  endView.setUint32(0, 0x06054b50, true);
+  endView.setUint16(8, entries.length, true);
+  endView.setUint16(10, entries.length, true);
+  endView.setUint32(12, centralSize, true);
+  endView.setUint32(16, offset, true);
+
+  const blobParts = [...parts, ...centralParts, end].map((part) =>
+    part.buffer.slice(part.byteOffset, part.byteOffset + part.byteLength) as ArrayBuffer
+  );
+  return new Blob(blobParts, { type: "application/zip" });
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadEmployeeDocumentsZip(employee: Employee) {
+  const folder = sanitizeFilePart(`${employee.code || "employee"}-${employee.name || "worker"}`);
+  const documents = employee.documents || [];
+  const manifest = [
+    `Employee: ${employee.name}`,
+    `Worker Code: ${employee.code}`,
+    `Generated: ${new Date().toLocaleString("en-SG")}`,
+    "",
+    "Documents:",
+  ];
+  const entries: { path: string; data: Uint8Array }[] = [];
+
+  documents.forEach((documentName) => {
+    const url = employee.documentUrls?.[documentName];
+    if (url) {
+      entries.push({
+        path: `${folder}/${sanitizeFilePart(documentName)}`,
+        data: dataUrlToBytes(url),
+      });
+      manifest.push(`- ${documentName}`);
+    } else {
+      manifest.push(`- ${documentName} (file name only; actual file not attached)`);
+    }
+  });
+
+  if (!documents.length) {
+    manifest.push("- No documents attached.");
+  }
+
+  entries.push({
+    path: `${folder}/document-manifest.txt`,
+    data: new TextEncoder().encode(manifest.join("\n")),
+  });
+
+  downloadBlob(createZip(entries), `${folder}-documents.zip`);
+}
+
 function employeeDuplicateKeys(employee: Employee) {
   return [
     ["code", employee.code],
@@ -1282,20 +1511,150 @@ function DigitalWorkerPass({
   );
 }
 
+function EmployeeDocumentCopiesPanel({
+  documents,
+  documentUrls,
+  documentMeta,
+  onAdd,
+  onOpen,
+  onDownload,
+  onDownloadAll,
+  onRemove,
+}: {
+  documents: string[];
+  documentUrls?: Record<string, string>;
+  documentMeta?: Record<string, DocumentMeta>;
+  onAdd: () => void;
+  onOpen: (name: string) => void;
+  onDownload: (name: string) => void;
+  onDownloadAll: () => void;
+  onRemove: (name: string) => void;
+}) {
+  return (
+    <div className="employee-documents-card">
+      <div className="employee-documents-header">
+        <div className="employee-documents-title-wrap">
+          <div className="employee-documents-icon">
+            <FileBadge size={19} />
+          </div>
+          <div>
+            <h3>Employee Document Copies</h3>
+            <p>Upload, view, manage and download employee documents</p>
+          </div>
+        </div>
+        <div className="employee-documents-actions">
+          <button type="button" className="secondary-button compact" onClick={onDownloadAll}>
+            <Download size={13} />
+            <span>Download All as ZIP</span>
+          </button>
+          <button type="button" className="primary-button compact" onClick={onAdd}>
+            <Plus size={13} />
+            <span>Add Documents</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="employee-documents-table-wrap">
+        <table className="employee-documents-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Document Name</th>
+              <th>File Type</th>
+              <th>Size</th>
+              <th>Uploaded On</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {documents.length > 0 ? (
+              documents.map((name, index) => {
+                const type = documentType(name, documentMeta?.[name]);
+                const typeClass = documentTypeClass(type);
+                const canOpen = Boolean(documentUrls?.[name]);
+
+                return (
+                  <tr key={name}>
+                    <td>{index + 1}</td>
+                    <td>
+                      <div className="employee-document-name">
+                        <span className={`employee-document-file-icon ${typeClass}`}>
+                          <FileBadge size={14} />
+                        </span>
+                        <span>{name}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`employee-document-type ${typeClass}`}>{type}</span>
+                    </td>
+                    <td>{documentSizeLabel(documentMeta?.[name]?.size)}</td>
+                    <td>{documentUploadedLabel(documentMeta?.[name]?.uploadedAt)}</td>
+                    <td>
+                      <div className="employee-document-row-actions">
+                        <button
+                          type="button"
+                          className="icon-button"
+                          disabled={!canOpen}
+                          onClick={() => onOpen(name)}
+                          title={canOpen ? `View ${name}` : "Add the actual file to view it"}
+                        >
+                          <Eye size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-button"
+                          disabled={!canOpen}
+                          onClick={() => onDownload(name)}
+                          title={canOpen ? `Download ${name}` : "Add the actual file to download it"}
+                        >
+                          <Download size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-button danger-icon-button"
+                          onClick={() => onRemove(name)}
+                          title={`Remove ${name}`}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={6}>
+                  <div className="employee-documents-empty">
+                    No documents uploaded yet.
+                  </div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function EmployeeDrawer({
   employee,
   lang,
   onClose,
   onEdit,
   onAlert,
+  onDocumentsChange,
 }: {
   employee: Employee;
   lang: Language;
   onClose: () => void;
   onEdit: () => void;
   onAlert: (msg: string) => void;
+  onDocumentsChange: (employee: Employee) => void;
 }) {
   const t = translations[lang] || translations.en;
+  const documentInputRef = useRef<HTMLInputElement>(null);
   const credentials = [
     { label: "Work Permit / S Pass", value: employee.wpExpiry, doc: employee.workPermitNo },
     { label: "Passport Expiry", value: employee.passportExpiry, doc: employee.passportNo },
@@ -1304,6 +1663,56 @@ function EmployeeDrawer({
 
   function handlePrintPass() {
     window.print();
+  }
+
+  async function handleDrawerDocumentSelection(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+
+      const uploadedUrls = Object.fromEntries(
+        await Promise.all(files.map(async (file) => [file.name, await readFileAsDataUrl(file)]))
+      );
+      const documentMeta = documentMetaFromFiles(files);
+      const existingDocuments = employee.documents || [];
+      const nextDocuments = Array.from(new Set([...existingDocuments, ...files.map((file) => file.name)]));
+      const nextEmployee = {
+        ...employee,
+        documents: nextDocuments,
+        documentUrls: {
+          ...(employee.documentUrls || {}),
+          ...uploadedUrls,
+        },
+        documentMeta: {
+          ...(employee.documentMeta || {}),
+          ...documentMeta,
+        },
+      };
+
+    onDocumentsChange(nextEmployee);
+    onAlert(`${files.length} document${files.length === 1 ? "" : "s"} added for ${employee.name}.`);
+    event.target.value = "";
+  }
+
+  async function openEmployeeDocument(name: string) {
+    const url = employee.documentUrls?.[name];
+    if (!url) {
+      return onAlert(`${name} is a reference only. Add the actual file to open it.`);
+    }
+    await openDocumentUrl(url);
+  }
+
+  function removeEmployeeDocument(name: string) {
+    const documentUrls = { ...(employee.documentUrls || {}) };
+    const documentMeta = { ...(employee.documentMeta || {}) };
+    delete documentUrls[name];
+    delete documentMeta[name];
+    onDocumentsChange({
+      ...employee,
+      documents: (employee.documents || []).filter((doc) => doc !== name),
+      documentUrls,
+      documentMeta,
+    });
+    onAlert(`${name} removed from ${employee.name}.`);
   }
 
   return (
@@ -1417,33 +1826,31 @@ function EmployeeDrawer({
 
           {/* Uploaded Documents */}
           <div>
-            <div className="drawer-section-title">
-              <span>{t.documentFiles}</span>
-            </div>
-            {employee.documents && employee.documents.length > 0 ? (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                {employee.documents.map((doc) => (
-                  <span
-                    key={doc}
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: "6px",
-                      background: "#f1f5f9",
-                      fontSize: "11px",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      color: "#334155",
-                    }}
-                  >
-                    <FileBadge size={14} style={{ color: "#059669" }} />
-                    {doc}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p style={{ margin: 0, fontSize: "12px", color: "#94a3b8" }}>No documents attached.</p>
-            )}
+            <input
+              ref={documentInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+              style={{ display: "none" }}
+              onChange={handleDrawerDocumentSelection}
+            />
+            <EmployeeDocumentCopiesPanel
+              documents={employee.documents || []}
+              documentUrls={employee.documentUrls}
+              documentMeta={employee.documentMeta}
+              onAdd={() => documentInputRef.current?.click()}
+              onOpen={openEmployeeDocument}
+              onDownload={(name) => {
+                const url = employee.documentUrls?.[name];
+                if (!url) return onAlert(`${name} is a reference only. Add the actual file to download it.`);
+                downloadDocumentUrl(url, name);
+              }}
+              onDownloadAll={() => {
+                downloadEmployeeDocumentsZip(employee);
+                onAlert(`Document ZIP downloaded for ${employee.name}.`);
+              }}
+              onRemove={removeEmployeeDocument}
+            />
           </div>
         </div>
 
@@ -1497,20 +1904,79 @@ function EmployeeModal({
     csoc: "",
     csocExpiry: isoDate(365),
     documents: [],
+    documentUrls: {},
+    documentMeta: {},
   };
 
   const [form, setForm] = useState<Employee>(initial || blank);
   const [error, setError] = useState("");
+  const [documentPreviews, setDocumentPreviews] = useState<Record<string, string>>({});
   const documentInputRef = useRef<HTMLInputElement>(null);
+  const documentPreviewsRef = useRef<Record<string, string>>({});
 
   const update = (key: keyof Employee, value: string | string[]) =>
     setForm({ ...form, [key]: value });
 
-  function handleDocumentSelection(event: React.ChangeEvent<HTMLInputElement>) {
+  useEffect(() => {
+    return () => {
+      Object.values(documentPreviewsRef.current).forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
+
+  async function handleDocumentSelection(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files || []);
     if (files.length > 0) {
-      update("documents", files.map((file) => file.name));
+      Object.values(documentPreviewsRef.current).forEach((url) => URL.revokeObjectURL(url));
+      const previews = Object.fromEntries(files.map((file) => [file.name, URL.createObjectURL(file)]));
+      const documentUrls = Object.fromEntries(
+        await Promise.all(files.map(async (file) => [file.name, await readFileAsDataUrl(file)]))
+      );
+      const documentMeta = documentMetaFromFiles(files);
+      documentPreviewsRef.current = previews;
+      setDocumentPreviews(previews);
+      setForm((current) => ({
+        ...current,
+        documents: Array.from(new Set([...current.documents, ...files.map((file) => file.name)])),
+        documentUrls: {
+          ...(current.documentUrls || {}),
+          ...documentUrls,
+        },
+        documentMeta: {
+          ...(current.documentMeta || {}),
+          ...documentMeta,
+        },
+      }));
     }
+    event.target.value = "";
+  }
+
+  async function openDocument(name: string) {
+    const url = documentPreviews[name] || form.documentUrls?.[name];
+    if (!url) {
+      return setError("This saved document only has a file name in the demo record. Attach the file again to preview it.");
+    }
+    await openDocumentUrl(url);
+  }
+
+  function removeDocument(name: string) {
+    const previewUrl = documentPreviews[name];
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      const remaining = { ...documentPreviewsRef.current };
+      delete remaining[name];
+      documentPreviewsRef.current = remaining;
+      setDocumentPreviews(remaining);
+    }
+    const documentUrls = { ...(form.documentUrls || {}) };
+    const documentMeta = { ...(form.documentMeta || {}) };
+    delete documentUrls[name];
+    delete documentMeta[name];
+    setForm((current) => ({
+      ...current,
+      documents: current.documents.filter((documentName) => documentName !== name),
+      documentUrls,
+      documentMeta,
+    }));
   }
 
   function fillDemo() {
@@ -1536,6 +2002,8 @@ function EmployeeModal({
       csocExpiry: isoDate(25),
       status: "Active",
       documents: ["passport_copy.pdf", "safety_cert.pdf"],
+      documentUrls: {},
+      documentMeta: {},
     });
   }
 
@@ -1776,63 +2244,30 @@ function EmployeeModal({
             </div>
 
             {/* Documents Attachment */}
-            <div className="modal-section-banner">
-              <Upload size={16} />
-              <span>Document Verification</span>
-            </div>
-            <div
-              style={{
-                border: "1px dashed #cbd5e1",
-                borderRadius: "8px",
-                padding: "16px",
-                textAlign: "center",
-                background: "var(--surface-alt)",
-                cursor: "pointer",
-              }}
-              role="button"
-              tabIndex={0}
-              aria-label="Attach worker documents"
-              onClick={() => documentInputRef.current?.click()}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  documentInputRef.current?.click();
-                }
-              }}
-            >
-              <Upload size={24} style={{ color: "#059669", margin: "0 auto 6px" }} />
-              <div style={{ fontSize: "13px", fontWeight: 600 }}>Click to attach copies</div>
-              <div style={{ fontSize: "11px", color: "#64748b" }}>Passport, CSOC Certificate, WP Card (PDF, PNG, JPG)</div>
+            <div>
               <input
                 ref={documentInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.jpg,.jpeg,.png"
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
                 style={{ display: "none" }}
                 onChange={handleDocumentSelection}
               />
+              <EmployeeDocumentCopiesPanel
+                documents={form.documents}
+                documentUrls={{ ...(form.documentUrls || {}), ...documentPreviews }}
+                documentMeta={form.documentMeta}
+                onAdd={() => documentInputRef.current?.click()}
+                onOpen={openDocument}
+                onDownload={(name) => {
+                  const url = documentPreviews[name] || form.documentUrls?.[name];
+                  if (!url) return setError("This saved document only has a file name in the demo record. Attach the file again to download it.");
+                  downloadDocumentUrl(url, name);
+                }}
+                onDownloadAll={() => downloadEmployeeDocumentsZip(form)}
+                onRemove={removeDocument}
+              />
             </div>
-            {form.documents.length > 0 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                {form.documents.map((d) => (
-                  <span
-                    key={d}
-                    style={{
-                      fontSize: "11px",
-                      padding: "4px 8px",
-                      borderRadius: "6px",
-                      background: "#e0f2fe",
-                      color: "#0369a1",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "4px",
-                    }}
-                  >
-                    <FileBadge size={13} /> {d}
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
 
           <footer className="modal-footer">
@@ -2700,6 +3135,44 @@ export default function Home() {
     setNotice(`Worker record for ${emp.name} saved successfully.`);
   }
 
+  function updateEmployeeDocuments(employee: Employee) {
+    setEmployees((curr) => curr.map((record) => (record.id === employee.id ? employee : record)));
+    setDetailEmployee(employee);
+  }
+
+  function uploadDocumentsFromTable(employee: Employee) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.multiple = true;
+    input.accept = ".pdf,.jpg,.jpeg,.png,.doc,.docx";
+    input.onchange = async () => {
+      const files = Array.from(input.files || []);
+      if (!files.length) return;
+
+      const documentUrls = Object.fromEntries(
+        await Promise.all(files.map(async (file) => [file.name, await readFileAsDataUrl(file)]))
+      );
+      const documentMeta = documentMetaFromFiles(files);
+      const updatedEmployee = {
+        ...employee,
+        documents: Array.from(new Set([...(employee.documents || []), ...files.map((file) => file.name)])),
+        documentUrls: {
+          ...(employee.documentUrls || {}),
+          ...documentUrls,
+        },
+        documentMeta: {
+          ...(employee.documentMeta || {}),
+          ...documentMeta,
+        },
+      };
+
+      setEmployees((curr) => curr.map((record) => (record.id === employee.id ? updatedEmployee : record)));
+      setDetailEmployee((current) => (current?.id === employee.id ? updatedEmployee : current));
+      setNotice(`${files.length} document${files.length === 1 ? "" : "s"} uploaded for ${employee.name}.`);
+    };
+    input.click();
+  }
+
   function remove(ids: number[]) {
     if (!ids.length) return;
     if (!window.confirm(`Delete ${ids.length} worker record(s)? This action cannot be reversed.`))
@@ -3565,7 +4038,9 @@ export default function Home() {
                               </div>
                             </th>
                           ))}
-                          <th style={{ textAlign: "right", paddingRight: "16px" }}>Actions</th>
+                          <th style={{ textAlign: "right", paddingRight: "16px", minWidth: "250px" }}>
+                            Actions
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -3637,6 +4112,38 @@ export default function Home() {
                                     >
                                       <Edit3 size={16} />
                                     </button>
+                                    <span className="row-action-divider" />
+                                    <button
+                                      type="button"
+                                      className="icon-button table-doc-action"
+                                      onClick={() => uploadDocumentsFromTable(employee)}
+                                      title="Upload employee documents"
+                                    >
+                                      <Upload size={16} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="icon-button table-doc-action"
+                                      onClick={() => setDetailEmployee(employee)}
+                                      title={`View documents (${employee.documents?.length || 0})`}
+                                    >
+                                      <FileBadge size={16} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="icon-button table-doc-action"
+                                      onClick={() => {
+                                        downloadEmployeeDocumentsZip(employee);
+                                        setNotice(`Document ZIP downloaded for ${employee.name}.`);
+                                      }}
+                                      title="Download employee documents ZIP"
+                                    >
+                                      <Download size={16} />
+                                    </button>
+                                    <span className="row-doc-count" title={`${employee.documents?.length || 0} attached document(s)`}>
+                                      {employee.documents?.length || 0}
+                                    </span>
+                                    <span className="row-action-divider" />
                                     <button
                                       type="button"
                                       className="icon-button"
@@ -3832,6 +4339,7 @@ export default function Home() {
             setDetailEmployee(null);
           }}
           onAlert={(msg) => setNotice(msg)}
+          onDocumentsChange={updateEmployeeDocuments}
         />
       )}
 
